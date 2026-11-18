@@ -1,56 +1,95 @@
 import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
+import { StatusBar } from 'expo-status-bar';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import {
+  NotoSerifBengali_400Regular,
+  NotoSerifBengali_700Bold,
+} from '@expo-google-fonts/noto-serif-bengali';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+import {
+  HindSiliguri_400Regular,
+  HindSiliguri_500Medium,
+  HindSiliguri_700Bold,
+} from '@expo-google-fonts/hind-siliguri';
+
+import { ThemeProvider, usePathshalaTheme } from '@/context/ThemeContext';
+
+export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   anchor: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
+  const [appIsReady, setAppIsReady] = useState(false);
+
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    NotoSerifBengali_400Regular,
+    NotoSerifBengali_700Bold,
+    HindSiliguri_400Regular,
+    HindSiliguri_500Medium,
+    HindSiliguri_700Bold,
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
+    if (loaded || error) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAppIsReady(true);
+      SplashScreen.hideAsync().catch(() => {});
     }
-  }, [loaded]);
+  }, [loaded, error]);
 
-  if (!loaded) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppIsReady(true);
+      SplashScreen.hideAsync().catch(() => {});
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!appIsReady) {
     return null;
   }
 
-  return <RootLayoutNav />;
+  return (
+    <ThemeProvider>
+      <AppNav />
+    </ThemeProvider>
+  );
 }
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+function AppNav() {
+  const { theme, isDark } = usePathshalaTheme();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          contentStyle: { backgroundColor: theme.canvas },
+        }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'none' }} />
+        <Stack.Screen name="book/[id]" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="reader/[id]"
+          options={{
+            headerShown: false,
+            animation: 'fade_from_bottom',
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen name="author/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
-    </ThemeProvider>
+    </>
   );
 }

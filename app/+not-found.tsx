@@ -1,17 +1,23 @@
 import { Link, Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
-
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, Text, View } from 'react-native';
+import { FONTS } from '@/constants/Typography';
+import { usePathshalaTheme } from '@/context/ThemeContext';
 
 export default function NotFoundScreen() {
+  const { theme } = usePathshalaTheme();
+
   return (
     <>
-      <Stack.Screen options={{ title: 'Oops!' }} />
-      <View style={styles.container}>
-        <Text style={styles.title}>This screen doesn't exist.</Text>
+      <Stack.Screen options={{ title: 'পাতাটি পাওয়া যায়নি' }} />
+      <View style={[styles.container, { backgroundColor: theme.canvas }]}>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>
+          এই পাতাটি খুঁজে পাওয়া যায়নি।
+        </Text>
 
         <Link href="/" style={styles.link}>
-          <Text style={styles.linkText}>Go to home screen!</Text>
+          <Text style={[styles.linkText, { color: theme.accentTerracotta }]}>
+            পাঠাগারে ফিরে যান
+          </Text>
         </Link>
       </View>
     </>
@@ -26,15 +32,15 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontFamily: FONTS.serifBold,
   },
   link: {
     marginTop: 15,
-    paddingVertical: 15,
+    paddingVertical: 12,
   },
   linkText: {
     fontSize: 14,
-    color: '#2e78b7',
+    fontFamily: FONTS.sansBold,
   },
 });

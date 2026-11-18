@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local extraction scratch scripts & artifacts
+scratch/
+
+# built APK packages
+*.apk
