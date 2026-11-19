@@ -18,6 +18,7 @@ export interface GlassSurfaceProps {
   radius?: number;
   intensity?: number;
   elevation?: 'none' | 'e1' | 'e2';
+  variant?: 'floating' | 'docked';
   tintColor?: string;
   themeOverride?: ThemeColors;
   blurTarget?: RefObject<ComponentRef<typeof View> | null>;
@@ -27,9 +28,10 @@ export function GlassSurface({
   children,
   style,
   contentStyle,
-  radius = 24,
-  intensity = 65,
+  radius = 22,
+  intensity = 68,
   elevation = 'e1',
+  variant = 'floating',
   tintColor,
   themeOverride,
   blurTarget,
@@ -37,7 +39,10 @@ export function GlassSurface({
   const { theme: appTheme } = usePathshalaTheme();
   const activeTheme = themeOverride ?? appTheme;
   const isDark = Boolean(activeTheme.isDark);
-  const shadowStyle = elevation !== 'none' ? ELEVATION[elevation] : undefined;
+  const isDocked = variant === 'docked';
+  const effectiveRadius = isDocked ? 0 : radius;
+  const shadowStyle =
+    !isDocked && elevation !== 'none' ? ELEVATION[elevation] : undefined;
 
   const canAndroidHardwareBlur = Platform.OS === 'android' && Boolean(blurTarget);
   const effectiveTint =
@@ -47,16 +52,23 @@ export function GlassSurface({
       : activeTheme.glassTint);
 
   return (
-    <View style={[{ borderRadius: radius }, shadowStyle, style]}>
+    <View style={[{ borderRadius: effectiveRadius }, shadowStyle, style]}>
       <View
         style={[
           styles.innerShell,
-          {
-            borderRadius: radius,
-            borderColor: activeTheme.glassRimBottom,
-            borderTopColor: activeTheme.glassRimTop,
-            borderLeftColor: activeTheme.glassRimTop,
-          },
+          isDocked
+            ? {
+                borderRadius: 0,
+                borderWidth: 0,
+                borderBottomWidth: StyleSheet.hairlineWidth,
+                borderBottomColor: activeTheme.borderSubtle,
+              }
+            : {
+                borderRadius: effectiveRadius,
+                borderWidth: 1,
+                borderColor: activeTheme.glassRimBottom,
+                borderTopColor: activeTheme.glassRimTop,
+              },
           contentStyle,
         ]}>
         <BlurView
@@ -76,7 +88,7 @@ export function GlassSurface({
               : undefined
           }
           pointerEvents="none"
-          style={[styles.absFill, { borderRadius: radius }]}
+          style={[styles.absFill, { borderRadius: effectiveRadius }]}
         />
 
         <View
@@ -84,17 +96,15 @@ export function GlassSurface({
           style={[styles.absFill, { backgroundColor: effectiveTint }]}
         />
 
-        <View
-          pointerEvents="none"
-          style={[
-            styles.sheenBand,
-            {
-              backgroundColor: activeTheme.glassSheen,
-              borderTopLeftRadius: radius,
-              borderTopRightRadius: radius,
-            },
-          ]}
-        />
+        {!isDocked && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.topHairlineRim,
+              { backgroundColor: activeTheme.glassRimTop },
+            ]}
+          />
+        )}
 
         {children}
       </View>
@@ -105,7 +115,6 @@ export function GlassSurface({
 const styles = StyleSheet.create({
   innerShell: {
     overflow: 'hidden',
-    borderWidth: 1,
     position: 'relative',
   },
   absFill: {
@@ -115,11 +124,12 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  sheenBand: {
+  topHairlineRim: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
-    height: '44%',
+    left: 16,
+    right: 16,
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.7,
   },
 });

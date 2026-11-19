@@ -11,9 +11,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { FONTS } from '@/constants/Typography';
+import { LAYOUT, TOUCH_TARGET, TYPOGRAPHY } from '@/constants/design';
 import { usePathshalaTheme } from '@/context/ThemeContext';
+import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { hapticSelection } from '@/utils/haptics';
+import { renderWithNotoNumbers } from './NotoNumbers';
 import { GlassSurface, type GlassSurfaceProps } from './GlassSurface';
 
 export interface GlassHeaderProps {
@@ -25,6 +27,7 @@ export interface GlassHeaderProps {
   trailing?: React.ReactNode;
   bottomSlot?: React.ReactNode;
   floating?: boolean;
+  maxWidth?: number;
   radius?: number;
   style?: StyleProp<ViewStyle>;
   onLayout?: (e: LayoutChangeEvent) => void;
@@ -39,8 +42,9 @@ export function GlassHeader({
   leading,
   trailing,
   bottomSlot,
-  floating = true,
-  radius = 26,
+  floating = false,
+  maxWidth = LAYOUT.maxContentWidth,
+  radius = 22,
   style,
   onLayout,
   blurTarget,
@@ -48,6 +52,7 @@ export function GlassHeader({
   const { theme, isDark } = usePathshalaTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const layout = useResponsiveLayout();
 
   const handleBack = () => {
     hapticSelection();
@@ -58,7 +63,11 @@ export function GlassHeader({
     }
   };
 
-  const containerPositionStyle: ViewStyle = floating
+  const actionCircleBg = isDark
+    ? 'rgba(255, 255, 255, 0.08)'
+    : 'rgba(30, 25, 20, 0.05)';
+
+  const outerStyle: ViewStyle = floating
     ? {
         position: 'absolute',
         top: insets.top + 6,
@@ -67,90 +76,103 @@ export function GlassHeader({
         zIndex: 50,
       }
     : {
-        marginTop: insets.top + 6,
-        marginHorizontal: 12,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
         zIndex: 50,
       };
 
-  const actionCircleBg = isDark
-    ? 'rgba(255, 255, 255, 0.08)'
-    : 'rgba(30, 25, 20, 0.055)';
+  const innerContent = (
+    <View
+      style={[
+        styles.innerContainer,
+        {
+          maxWidth,
+          paddingHorizontal: floating ? 14 : layout.horizontalPadding,
+          paddingTop: floating ? 10 : insets.top + 10,
+          paddingBottom: bottomSlot ? 12 : 10,
+        },
+      ]}>
+      <View style={styles.topRow}>
+        {backButton ? (
+          <Pressable
+            onPress={handleBack}
+            accessibilityRole="button"
+            accessibilityLabel="ফিরে যান"
+            style={({ pressed }) => [
+              styles.circleBtn,
+              {
+                backgroundColor: actionCircleBg,
+                borderColor: theme.borderSubtle,
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}>
+            <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
+          </Pressable>
+        ) : leading ? (
+          leading
+        ) : null}
+
+        {title !== undefined ? (
+          <View
+            style={[
+              styles.titleBox,
+              backButton && styles.titleCentered,
+            ]}>
+            <Text
+              numberOfLines={1}
+              accessibilityRole="header"
+              style={[
+                backButton ? styles.titleTextCompact : styles.titleText,
+                { color: theme.textPrimary },
+              ]}>
+              {renderWithNotoNumbers(title, true)}
+            </Text>
+            {subtitle ? (
+              <Text
+                numberOfLines={1}
+                style={[styles.subtitleText, { color: theme.textMuted }]}>
+                {renderWithNotoNumbers(subtitle)}
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <View style={{ flex: 1 }} />
+        )}
+
+        {trailing ? (
+          <View style={styles.trailingWrap}>{trailing}</View>
+        ) : backButton ? (
+          <View style={styles.trailingPlaceholder} />
+        ) : null}
+      </View>
+
+      {bottomSlot ? <View style={styles.bottomSlotWrap}>{bottomSlot}</View> : null}
+    </View>
+  );
 
   return (
     <View
       onLayout={onLayout}
-      style={[containerPositionStyle, style]}
+      style={[outerStyle, style]}
       pointerEvents="box-none">
       <GlassSurface
+        variant={floating ? 'floating' : 'docked'}
         radius={radius}
-        intensity={72}
-        elevation="e2"
-        blurTarget={blurTarget}
-        contentStyle={styles.islandPadding}>
-        <View style={styles.topRow}>
-          {backButton ? (
-            <Pressable
-              onPress={handleBack}
-              hitSlop={6}
-              accessibilityLabel="ফিরে যান"
-              style={({ pressed }) => [
-                styles.circleBtn,
-                {
-                  backgroundColor: actionCircleBg,
-                  borderColor: theme.glassRimTop,
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}>
-              <Ionicons name="arrow-back" size={19} color={theme.textPrimary} />
-            </Pressable>
-          ) : leading ? (
-            leading
-          ) : null}
-
-          {title !== undefined ? (
-            <View
-              style={[
-                styles.titleBox,
-                backButton && styles.titleCentered,
-              ]}>
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.titleText,
-                  backButton && styles.titleTextCompact,
-                  { color: theme.textPrimary },
-                ]}>
-                {title}
-              </Text>
-              {subtitle ? (
-                <Text
-                  numberOfLines={1}
-                  style={[styles.subtitleText, { color: theme.textMuted }]}>
-                  {subtitle}
-                </Text>
-              ) : null}
-            </View>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
-
-          {trailing ? (
-            <View style={styles.trailingWrap}>{trailing}</View>
-          ) : backButton ? (
-            <View style={styles.trailingPlaceholder} />
-          ) : null}
-        </View>
-
-        {bottomSlot ? <View style={styles.bottomSlotWrap}>{bottomSlot}</View> : null}
+        intensity={floating ? 72 : 76}
+        elevation={floating ? 'e2' : 'none'}
+        blurTarget={blurTarget}>
+        {innerContent}
       </GlassSurface>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  islandPadding: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  innerContainer: {
+    width: '100%',
+    alignSelf: 'center',
     gap: 10,
   },
   topRow: {
@@ -158,12 +180,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    minHeight: 42,
+    minHeight: TOUCH_TARGET.min,
   },
   circleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: TOUCH_TARGET.min,
+    height: TOUCH_TARGET.min,
+    borderRadius: TOUCH_TARGET.min / 2,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -176,15 +198,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   titleText: {
-    fontSize: 20,
-    fontFamily: FONTS.serifBold,
+    ...TYPOGRAPHY.h1,
+    fontSize: 21,
+    lineHeight: 28,
   },
   titleTextCompact: {
-    fontSize: 16,
+    ...TYPOGRAPHY.h3,
+    fontSize: 16.5,
+    lineHeight: 23,
   },
   subtitleText: {
-    fontSize: 11,
-    fontFamily: FONTS.sansMedium,
+    ...TYPOGRAPHY.caption,
+    fontSize: 11.5,
+    lineHeight: 16,
     marginTop: 1,
   },
   trailingWrap: {
@@ -193,8 +219,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   trailingPlaceholder: {
-    width: 40,
-    height: 40,
+    width: TOUCH_TARGET.min,
+    height: TOUCH_TARGET.min,
   },
   bottomSlotWrap: {
     gap: 8,

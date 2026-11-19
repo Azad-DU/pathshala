@@ -16,7 +16,7 @@ const STORAGE_KEYS = {
   READING_HISTORY: '@pathshala_reading_history',
 };
 
-const DEFAULT_SETTINGS: ReaderSettings = {
+export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   themeId: 'paper-beige',
   fontSize: 19,
   lineHeightMultiplier: 2.0,
@@ -26,6 +26,8 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   marginSize: 'normal',
   firstLineIndent: false,
 };
+
+const DEFAULT_SETTINGS = DEFAULT_READER_SETTINGS;
 
 let historyCache: Record<string, ReadingHistory> | null = null;
 let bookmarksCache: Bookmark[] | null = null;
@@ -114,6 +116,19 @@ export const StorageService = {
       return updated;
     } catch (e) {
       console.error('Error saving reader settings', e);
+      return DEFAULT_SETTINGS;
+    }
+  },
+
+  async resetReaderSettings(): Promise<ReaderSettings> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.READER_SETTINGS,
+        JSON.stringify(DEFAULT_SETTINGS)
+      );
+      return DEFAULT_SETTINGS;
+    } catch (e) {
+      console.error('Error resetting reader settings', e);
       return DEFAULT_SETTINGS;
     }
   },
@@ -231,5 +246,37 @@ export const StorageService = {
     }
     historyCache = {};
     return historyCache;
+  },
+
+  async removeReadingHistory(bookId: string): Promise<Record<string, ReadingHistory>> {
+    try {
+      const existing = await StorageService.getAllReadingHistory();
+      const { [bookId]: _removed, ...rest } = existing;
+      void _removed;
+      historyCache = rest;
+      await AsyncStorage.setItem(STORAGE_KEYS.READING_HISTORY, JSON.stringify(rest));
+      return rest;
+    } catch (e) {
+      console.error('Error removing reading history', e);
+      return historyCache ?? {};
+    }
+  },
+
+  async restoreReadingHistory(
+    entry: ReadingHistory
+  ): Promise<Record<string, ReadingHistory>> {
+    try {
+      const existing = await StorageService.getAllReadingHistory();
+      const updated: Record<string, ReadingHistory> = {
+        ...existing,
+        [entry.bookId]: entry,
+      };
+      historyCache = updated;
+      await AsyncStorage.setItem(STORAGE_KEYS.READING_HISTORY, JSON.stringify(updated));
+      return updated;
+    } catch (e) {
+      console.error('Error restoring reading history', e);
+      return historyCache ?? {};
+    }
   },
 };

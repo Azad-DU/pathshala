@@ -7,6 +7,8 @@ import React, {
   useState,
 } from 'react';
 import {
+  FlatList,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,48 +18,39 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { BlurTargetView } from 'expo-blur';
-import Animated, {
-  Extrapolation,
-  interpolate,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated';
 import {
   ALL_BOOKS_META,
   LITERARY_TYPE_INFO,
   WRITERS,
 } from '@/data/writers';
 import type { BookMeta, LiteraryType, ReadingHistory } from '@/types/library';
-import { RADIUS, SPACING, TOUCH_TARGET } from '@/constants/design';
+import {
+  LAYOUT,
+  RADIUS,
+  SPACING,
+  TOUCH_TARGET,
+  TYPOGRAPHY,
+} from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
-import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
 import { ClothboundBookCard } from '@/components/ClothboundBookCard';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { GlassSurface } from '@/components/ui/GlassSurface';
+import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { useTabBlurTarget } from '@/context/TabBlurContext';
 import { usePathshalaTheme } from '@/context/ThemeContext';
+import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { StorageService } from '@/services/storage';
 import {
+  SearchDoc,
   buildDoc,
   parseQuery,
   scoreDoc,
-  type SearchDoc,
 } from '@/utils/banglaSearch';
+import { CATEGORY_ORDER } from '@/utils/bookHelpers';
 import { hapticSelection } from '@/utils/haptics';
-
-const CATEGORY_ORDER: LiteraryType[] = [
-  'uponnash',
-  'golpo',
-  'kobita',
-  'gaan',
-  'natok',
-  'probondho',
-  'kishorepattho',
-  'vromonkahini',
-  'onyanno',
-];
 
 const QUICK_SEARCH_TAGS = [
   'গীতাঞ্জলি',
@@ -113,9 +106,14 @@ function getIndexedChapters(): IndexedChapter[] {
   return cachedIndexedChapters;
 }
 
+function GridRowSeparator() {
+  return <View style={{ height: 18 }} />;
+}
+
 export default function BrowseScreen() {
   const { theme, isDark } = usePathshalaTheme();
   const { setActiveBlurTarget } = useTabBlurTarget();
+  const layout = useResponsiveLayout();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const blurTargetRef = useRef<ComponentRef<typeof BlurTargetView>>(null);
@@ -150,106 +148,7 @@ export default function BrowseScreen() {
   const [readingHistory, setReadingHistory] = useState<
     Record<string, ReadingHistory>
   >({});
-  const [expandedHeaderHeight, setExpandedHeaderHeight] = useState(0);
-
-  const scrollY = useSharedValue(0);
-
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (e) => {
-      scrollY.value = e.contentOffset.y;
-    },
-  });
-
-  const islandWidthStyle = useAnimatedStyle(() => ({
-    marginHorizontal: interpolate(
-      scrollY.value,
-      [0, 56],
-      [0, 24],
-      Extrapolation.CLAMP
-    ),
-  }));
-
-  const islandPaddingStyle = useAnimatedStyle(() => ({
-    paddingVertical: interpolate(
-      scrollY.value,
-      [0, 56],
-      [11, 5],
-      Extrapolation.CLAMP
-    ),
-    paddingHorizontal: interpolate(
-      scrollY.value,
-      [0, 56],
-      [14, 8],
-      Extrapolation.CLAMP
-    ),
-  }));
-
-  const searchBoxAnimatedStyle = useAnimatedStyle(() => ({
-    minHeight: interpolate(
-      scrollY.value,
-      [0, 56],
-      [TOUCH_TARGET.min, 38],
-      Extrapolation.CLAMP
-    ),
-    borderRadius: interpolate(
-      scrollY.value,
-      [0, 56],
-      [RADIUS.md, 18],
-      Extrapolation.CLAMP
-    ),
-  }));
-
-  const titleCollapseStyle = useAnimatedStyle(() => ({
-    maxHeight: interpolate(
-      scrollY.value,
-      [0, 44],
-      [48, 0],
-      Extrapolation.CLAMP
-    ),
-    marginBottom: interpolate(
-      scrollY.value,
-      [0, 44],
-      [10, 0],
-      Extrapolation.CLAMP
-    ),
-    opacity: interpolate(
-      scrollY.value,
-      [0, 26],
-      [1, 0],
-      Extrapolation.CLAMP
-    ),
-    transform: [
-      {
-        translateY: interpolate(
-          scrollY.value,
-          [0, 44],
-          [0, -8],
-          Extrapolation.CLAMP
-        ),
-      },
-    ],
-  }));
-
-  const chipsCollapseStyle = useAnimatedStyle(() => ({
-    maxHeight: interpolate(
-      scrollY.value,
-      [0, 44],
-      [48, 0],
-      Extrapolation.CLAMP
-    ),
-    marginTop: interpolate(
-      scrollY.value,
-      [0, 44],
-      [10, 0],
-      Extrapolation.CLAMP
-    ),
-    opacity: interpolate(
-      scrollY.value,
-      [0, 26],
-      [1, 0],
-      Extrapolation.CLAMP
-    ),
-  }));
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedInput(searchInput), 140);
@@ -268,6 +167,16 @@ export default function BrowseScreen() {
     [debouncedInput]
   );
   const hasQuery = parsedQuery.tokens.length > 0;
+  const hasActiveFilters =
+    hasQuery || selectedType !== 'all' || selectedWriter !== 'all';
+
+  const handleResetFilters = useCallback(() => {
+    hapticSelection();
+    setSearchInput('');
+    setDebouncedInput('');
+    setSelectedType('all');
+    setSelectedWriter('all');
+  }, []);
 
   const filterChips = useMemo(() => {
     const chips: {
@@ -382,8 +291,7 @@ export default function BrowseScreen() {
   const listHeaderElement = useMemo(
     () => (
       <View style={styles.listHeaderWrap}>
-        {/* Popular Quick Search Tags when Input is Empty */}
-        {!hasQuery && (
+        {!hasQuery ? (
           <View style={styles.quickTagsSection}>
             <Text style={[styles.quickTagsLabel, { color: theme.textMuted }]}>
               জনপ্রিয় অনুসন্ধান
@@ -401,15 +309,18 @@ export default function BrowseScreen() {
                     setSearchInput(tag);
                     setDebouncedInput(tag);
                   }}
-                  style={[
+                  accessibilityRole="button"
+                  accessibilityLabel={`খুঁজুন: ${tag}`}
+                  style={({ pressed }) => [
                     styles.quickTagChip,
                     {
                       backgroundColor: theme.card,
                       borderColor: theme.borderSubtle,
+                      opacity: pressed ? 0.8 : 1,
                     },
                   ]}>
                   <Ionicons
-                    name="sparkles-outline"
+                    name="search-outline"
                     size={13}
                     color={theme.accentTerracotta}
                   />
@@ -421,19 +332,14 @@ export default function BrowseScreen() {
               ))}
             </ScrollView>
           </View>
-        )}
+        ) : null}
 
-        {/* Matching Chapters/Stories when Searching */}
-        {matchingChapters.length > 0 && (
+        {matchingChapters.length > 0 ? (
           <View style={styles.sectionBlock}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-                গল্প, কবিতা ও পরিচ্ছেদ
-              </Text>
-              <Text style={[styles.countText, { color: theme.textMuted }]}>
-                {renderWithNotoNumbers(`${toBanglaNumber(matchingChapters.length)}টি মিল`)}
-              </Text>
-            </View>
+            <SectionHeader
+              title="গল্প, কবিতা ও পরিচ্ছেদ"
+              countText={`${toBanglaNumber(matchingChapters.length)}টি মিল`}
+            />
             <View style={styles.chapterMatchesList}>
               {matchingChapters.map((item) => (
                 <Pressable
@@ -448,12 +354,14 @@ export default function BrowseScreen() {
                       },
                     });
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.chapterTitle}, ${item.bookTitle}`}
                   style={({ pressed }) => [
                     styles.chapterMatchRow,
                     {
                       backgroundColor: theme.card,
                       borderColor: theme.borderSubtle,
-                      opacity: pressed ? 0.88 : 1,
+                      opacity: pressed ? 0.86 : 1,
                     },
                   ]}>
                   <View
@@ -476,7 +384,7 @@ export default function BrowseScreen() {
                         styles.chapterMatchTitle,
                         { color: theme.textPrimary },
                       ]}>
-                      {item.chapterTitle}
+                      {renderWithNotoNumbers(item.chapterTitle, true)}
                     </Text>
                     <Text
                       numberOfLines={1}
@@ -498,17 +406,12 @@ export default function BrowseScreen() {
               ))}
             </View>
           </View>
-        )}
+        ) : null}
 
-        {/* Books Section Title */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-            {activeHeading}
-          </Text>
-          <Text style={[styles.countText, { color: theme.textMuted }]}>
-            {renderWithNotoNumbers(`${toBanglaNumber(filteredBooks.length)}টি বই`)}
-          </Text>
-        </View>
+        <SectionHeader
+          title={activeHeading}
+          countText={`${toBanglaNumber(filteredBooks.length)}টি বই`}
+        />
       </View>
     ),
     [
@@ -525,110 +428,114 @@ export default function BrowseScreen() {
     ({ item }: { item: BookMeta }) => (
       <ClothboundBookCard
         book={item}
+        cardWidth={layout.gridCardWidth}
         readingChapter={readingHistory[item.id]?.chapterSequence}
+        showAuthor={selectedWriter === 'all'}
+        showGenre={selectedType === 'all'}
       />
     ),
-    [readingHistory]
+    [layout.gridCardWidth, readingHistory, selectedWriter, selectedType]
   );
+
+  const topPadding =
+    headerHeight > 0 ? headerHeight + 16 : insets.top + 172;
 
   return (
     <View style={[styles.safeArea, { backgroundColor: theme.canvas }]}>
       <BlurTargetView ref={blurTargetRef} style={styles.safeArea}>
-        <Animated.FlatList
+        <FlatList
+          key={`browse-grid-${layout.gridColumns}`}
           data={filteredBooks}
           keyExtractor={(item) => item.id}
-          numColumns={2}
+          numColumns={layout.gridColumns}
           renderItem={renderBookItem}
           ListHeaderComponent={listHeaderElement}
           ListEmptyComponent={
             matchingChapters.length === 0 ? (
-              <View
-                style={[
-                  styles.emptyCard,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: theme.borderSubtle,
-                  },
-                ]}>
-                <Ionicons
-                  name="search-outline"
-                  size={32}
-                  color={theme.textMuted}
-                />
-                <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-                  কোনো বই বা গল্প পাওয়া যায়নি
-                </Text>
-                <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
-                  অন্য কোনো শব্দ বা সহজ বানানে খুঁজে দেখুন অথবা সব রচনা দেখুন।
-                </Text>
-                <Pressable
-                  onPress={() => {
-                    hapticSelection();
-                    setSearchInput('');
-                    setDebouncedInput('');
-                    setSelectedType('all');
-                    setSelectedWriter('all');
-                  }}
-                  style={[
-                    styles.resetBtn,
-                    { backgroundColor: theme.accentTerracotta },
-                  ]}>
-                  <Text style={styles.resetBtnText}>সব রচনা দেখুন</Text>
-                </Pressable>
-              </View>
+              <EmptyState
+                icon="search-outline"
+                title="কোনো বই বা গল্প পাওয়া যায়নি"
+                description="অন্য কোনো শব্দ বা সহজ বানানে খুঁজে দেখুন অথবা সব রচনা দেখুন।"
+                actionLabel="সব রচনা দেখুন"
+                onAction={handleResetFilters}
+              />
             ) : undefined
           }
-          columnWrapperStyle={styles.booksGridRow}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
+          columnWrapperStyle={
+            layout.gridColumns > 1
+              ? [styles.booksGridRow, { gap: layout.gridGap }]
+              : undefined
+          }
+          ItemSeparatorComponent={GridRowSeparator}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          initialNumToRender={8}
-          maxToRenderPerBatch={6}
+          initialNumToRender={10}
+          maxToRenderPerBatch={8}
           windowSize={5}
-          removeClippedSubviews
+          removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={[
             styles.scrollContent,
             {
-              paddingTop:
-                insets.top +
-                6 +
-                (expandedHeaderHeight > 0 ? expandedHeaderHeight + 14 : 178),
-              paddingBottom: Math.max(insets.bottom, 12) + 96,
+              maxWidth: layout.contentMaxWidth,
+              paddingHorizontal: layout.horizontalPadding,
+              paddingTop: topPadding,
+              paddingBottom:
+                Math.max(insets.bottom, 12) + LAYOUT.bottomDockReserve,
             },
           ]}
           showsVerticalScrollIndicator={false}
         />
       </BlurTargetView>
 
-      {/* Sticky Floating Liquid-Glass Search Header */}
-      <Animated.View
+      {/* Docked Translucent Search & Persistent Filter Header */}
+      <View
         onLayout={(e) => {
-          if (expandedHeaderHeight === 0) {
-            const h = Math.round(e.nativeEvent.layout.height);
-            if (h > 0) setExpandedHeaderHeight(h);
-          }
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h > 0 && h !== headerHeight) setHeaderHeight(h);
         }}
-        style={[
-          styles.stickyHeaderWrap,
-          { top: insets.top + 6 },
-          islandWidthStyle,
-        ]}
+        style={styles.stickyHeaderWrap}
         pointerEvents="box-none">
         <GlassSurface
-          radius={24}
-          intensity={76}
-          elevation="e2"
+          variant="docked"
+          intensity={78}
           blurTarget={blurTargetRef}>
-          <Animated.View style={islandPaddingStyle}>
-            <Animated.View
-              collapsable={false}
-              style={[styles.collapsibleWrap, titleCollapseStyle]}>
-              <View style={styles.headerTitleRow}>
-                <Text style={[styles.screenTitle, { color: theme.textPrimary }]}>
-                  খুঁজুন
-                </Text>
+          <View
+            style={[
+              styles.headerInner,
+              {
+                maxWidth: layout.contentMaxWidth,
+                paddingHorizontal: layout.horizontalPadding,
+                paddingTop: insets.top + 10,
+                paddingBottom: 10,
+              },
+            ]}>
+            <View style={styles.headerTitleRow}>
+              <Text
+                accessibilityRole="header"
+                style={[styles.screenTitle, { color: theme.textPrimary }]}>
+                খুঁজুন
+              </Text>
+
+              <View style={styles.headerMetaActions}>
+                {hasActiveFilters ? (
+                  <Pressable
+                    onPress={handleResetFilters}
+                    accessibilityRole="button"
+                    accessibilityLabel="ফিল্টার মুছুন"
+                    hitSlop={8}
+                    style={({ pressed }) => [
+                      styles.clearFiltersBtn,
+                      pressed && { opacity: 0.7 },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.clearFiltersText,
+                        { color: theme.textSecondary },
+                      ]}>
+                      রিসেট
+                    </Text>
+                  </Pressable>
+                ) : null}
                 <View
                   style={[
                     styles.resultCountPill,
@@ -652,12 +559,11 @@ export default function BrowseScreen() {
                   </Text>
                 </View>
               </View>
-            </Animated.View>
+            </View>
 
-            <Animated.View
+            <View
               style={[
                 styles.searchBox,
-                searchBoxAnimatedStyle,
                 {
                   backgroundColor: searchFieldBg,
                   borderColor: isSearchFocused
@@ -680,96 +586,93 @@ export default function BrowseScreen() {
                 placeholder="বই, গল্প, কবিতা, গান বা লেখক খুঁজুন..."
                 placeholderTextColor={theme.textMuted}
                 returnKeyType="search"
-                autoCorrect={false}
-                accessibilityLabel="বই বা গল্প অনুসন্ধান"
+                accessibilityLabel="বই, গল্প, কবিতা, গান বা লেখক অনুসন্ধান"
                 style={[styles.searchInput, { color: theme.textPrimary }]}
               />
-              {searchInput.length > 0 && (
+              {searchInput.length > 0 ? (
                 <Pressable
                   onPress={() => {
                     hapticSelection();
                     setSearchInput('');
                     setDebouncedInput('');
                   }}
-                  hitSlop={8}
-                  accessibilityLabel="অনুসন্ধান মুছুন">
+                  accessibilityRole="button"
+                  accessibilityLabel="অনুসন্ধান মুছুন"
+                  style={styles.clearInputBtn}>
                   <Ionicons
                     name="close-circle"
-                    size={18}
+                    size={19}
                     color={theme.textMuted}
                   />
                 </Pressable>
-              )}
-            </Animated.View>
+              ) : null}
+            </View>
 
-            <Animated.View
-              collapsable={false}
-              style={[styles.collapsibleWrap, chipsCollapseStyle]}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.chipsScroll}>
-                {filterChips.map((chip) => {
-                  const isActive =
-                    chip.kind === 'reset'
-                      ? selectedType === 'all' && selectedWriter === 'all'
-                      : chip.kind === 'writer'
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.chipsScroll}>
+              {filterChips.map((chip) => {
+                const isActive =
+                  chip.kind === 'reset'
+                    ? selectedType === 'all' && selectedWriter === 'all'
+                    : chip.kind === 'writer'
                       ? selectedWriter === chip.value
                       : selectedType === chip.value;
 
-                  return (
-                    <Pressable
-                      key={chip.id}
-                      onPress={() => {
-                        hapticSelection();
-                        if (chip.kind === 'reset') {
-                          setSelectedWriter('all');
-                          setSelectedType('all');
-                        } else if (chip.kind === 'writer') {
-                          setSelectedWriter((prev) =>
-                            prev === chip.value ? 'all' : chip.value
-                          );
-                        } else {
-                          setSelectedType((prev) =>
-                            prev === chip.value
-                              ? 'all'
-                              : (chip.value as LiteraryType)
-                          );
-                        }
-                      }}
-                      style={[
-                        styles.chipBtn,
-                        isActive
-                          ? {
-                              backgroundColor: theme.accentTerracotta,
-                              borderColor: theme.accentTerracotta,
-                            }
-                          : {
-                              backgroundColor: searchFieldBg,
-                              borderColor: theme.borderSubtle,
-                            },
-                      ]}>
-                      <Text
-                        style={[
-                          styles.chipText,
-                          {
-                            color: isActive ? '#FFFFFF' : theme.textSecondary,
-                            fontFamily: isActive
-                              ? FONTS.sansBold
-                              : FONTS.sansMedium,
+                return (
+                  <Pressable
+                    key={chip.id}
+                    onPress={() => {
+                      hapticSelection();
+                      if (chip.kind === 'reset') {
+                        setSelectedType('all');
+                        setSelectedWriter('all');
+                      } else if (chip.kind === 'writer') {
+                        setSelectedWriter((prev) =>
+                          prev === chip.value ? 'all' : chip.value
+                        );
+                      } else {
+                        const t = chip.value as LiteraryType;
+                        setSelectedType((prev) => (prev === t ? 'all' : t));
+                      }
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={chip.label}
+                    style={({ pressed }) => [
+                      styles.chipBtn,
+                      isActive
+                        ? {
+                            backgroundColor: theme.accentTerracotta,
+                            borderColor: theme.accentTerracotta,
+                          }
+                        : {
+                            backgroundColor: searchFieldBg,
+                            borderColor: theme.borderSubtle,
                           },
-                        ]}>
-                        {renderWithNotoNumbers(chip.label, isActive)}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </Animated.View>
-          </Animated.View>
+                      pressed && { opacity: 0.8 },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.chipText,
+                        {
+                          color: isActive ? '#FFFFFF' : theme.textSecondary,
+                          fontFamily: isActive
+                            ? FONTS.sansBold
+                            : FONTS.sansMedium,
+                        },
+                      ]}>
+                      {renderWithNotoNumbers(chip.label, isActive)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
         </GlassSurface>
-      </Animated.View>
+      </View>
     </View>
   );
 }
@@ -778,21 +681,39 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   stickyHeaderWrap: {
     position: 'absolute',
-    left: 12,
-    right: 12,
+    top: 0,
+    left: 0,
+    right: 0,
     zIndex: 50,
   },
-  collapsibleWrap: {
-    overflow: 'hidden',
+  headerInner: {
+    width: '100%',
+    alignSelf: 'center',
+    gap: 10,
   },
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
   },
   screenTitle: {
-    fontSize: 20,
-    fontFamily: FONTS.serifBold,
+    ...TYPOGRAPHY.h1,
+    fontSize: 21,
+    lineHeight: 28,
+  },
+  headerMetaActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  clearFiltersBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  clearFiltersText: {
+    ...TYPOGRAPHY.caption,
+    fontFamily: FONTS.sansBold,
   },
   resultCountPill: {
     paddingHorizontal: 10,
@@ -800,7 +721,8 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.pill,
   },
   resultCountText: {
-    fontSize: 11,
+    fontSize: 11.5,
+    lineHeight: 16,
     fontFamily: FONTS.sansBold,
   },
   searchBox: {
@@ -808,31 +730,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     minHeight: TOUCH_TARGET.min,
-    paddingHorizontal: 14,
+    paddingLeft: 14,
+    paddingRight: 6,
     borderRadius: RADIUS.md,
-    borderWidth: 1.25,
+    borderWidth: 1,
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: FONTS.sansMedium,
     paddingVertical: 8,
   },
+  clearInputBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   chipsScroll: {
     gap: 8,
-    paddingVertical: 1,
+    paddingVertical: 2,
   },
   chipBtn: {
+    minHeight: 34,
     paddingHorizontal: 13,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipText: {
     fontSize: 12,
+    lineHeight: 17,
   },
   scrollContent: {
-    paddingHorizontal: SPACING.base,
+    width: '100%',
+    alignSelf: 'center',
   },
   listHeaderWrap: {
     gap: SPACING.lg,
@@ -842,8 +777,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   quickTagsLabel: {
-    fontSize: 12,
-    fontFamily: FONTS.sansBold,
+    ...TYPOGRAPHY.overline,
   },
   quickTagsScroll: {
     gap: 8,
@@ -851,31 +785,20 @@ const styles = StyleSheet.create({
   quickTagChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
   },
   quickTagText: {
-    fontSize: 12,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontFamily: FONTS.sansMedium,
   },
   sectionBlock: {
-    gap: SPACING.md,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontFamily: FONTS.serifBold,
-  },
-  countText: {
-    fontSize: 12,
-    fontFamily: FONTS.sansMedium,
+    gap: SPACING.sm,
   },
   chapterMatchesList: {
     gap: 8,
@@ -889,15 +812,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   chapterBadge: {
-    minWidth: 32,
-    height: 32,
-    paddingHorizontal: 4,
+    minWidth: 34,
+    height: 34,
+    paddingHorizontal: 6,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chapterBadgeText: {
-    fontSize: 12,
+    fontSize: 12.5,
+    lineHeight: 17,
     fontFamily: FONTS.serifBold,
   },
   chapterMatchInfo: {
@@ -905,41 +829,16 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   chapterMatchTitle: {
-    fontSize: 14,
-    fontFamily: FONTS.serifBold,
+    ...TYPOGRAPHY.h3,
+    fontSize: 14.5,
+    lineHeight: 21,
   },
   chapterMatchSub: {
-    fontSize: 11,
+    fontSize: 11.5,
+    lineHeight: 17,
     fontFamily: FONTS.sansMedium,
   },
   booksGridRow: {
-    justifyContent: 'space-between',
-  },
-  emptyCard: {
-    alignItems: 'center',
-    padding: SPACING.xxl,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontFamily: FONTS.serifBold,
-  },
-  emptySub: {
-    fontSize: 13,
-    fontFamily: FONTS.sansMedium,
-    textAlign: 'center',
-  },
-  resetBtn: {
-    marginTop: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: RADIUS.pill,
-  },
-  resetBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontFamily: FONTS.sansBold,
+    justifyContent: 'flex-start',
   },
 });

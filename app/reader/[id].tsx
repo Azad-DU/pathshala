@@ -12,9 +12,7 @@ import {
   Image,
   StyleSheet,
   FlatList,
-  ScrollView,
   Pressable,
-  Modal,
   Share,
   Platform,
   NativeSyntheticEvent,
@@ -31,21 +29,32 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import Slider from '@react-native-community/slider';
 import {
-  ALL_BOOKS_META,
   getBookMetaById,
   loadBookById,
   loadBookByIdAsync,
 } from '@/data/writers';
-import type { Book, Chapter, ReaderSettings, ThemeMode } from '@/types/library';
-import { RADIUS, SPACING, TOUCH_TARGET } from '@/constants/design';
+import type { Book, Chapter, ReaderSettings } from '@/types/library';
+import {
+  LAYOUT,
+  RADIUS,
+  TOUCH_TARGET,
+} from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
 import { THEMES, ThemeId } from '@/constants/Themes';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { GlassHeader } from '@/components/ui/GlassHeader';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
+import { ParagraphActionSheet } from '@/components/reader/ParagraphActionSheet';
+import { ReaderLoadingView } from '@/components/reader/ReaderLoadingView';
+import { ReaderSettingsSheet } from '@/components/reader/ReaderSettingsSheet';
+import { ReaderTocSheet } from '@/components/reader/ReaderTocSheet';
 import { useReaderTheme } from '@/context/ThemeContext';
-import { StorageService } from '@/services/storage';
+import {
+  DEFAULT_READER_SETTINGS,
+  StorageService,
+} from '@/services/storage';
 import { hapticImpact, hapticSelection } from '@/utils/haptics';
 
 const PARAGRAPH_GAP_MAP: Record<ReaderSettings['paragraphSpacing'], number> = {
@@ -121,11 +130,19 @@ const ParagraphRow = React.memo(function ParagraphRow({
           fontFamily,
           textAlign,
         }}>
-        {fontFamily === FONTS.serifRegular ? displayText : renderWithNotoNumbers(displayText)}
+        {fontFamily === FONTS.serifRegular
+          ? displayText
+          : renderWithNotoNumbers(displayText)}
       </Text>
     </Pressable>
   );
 });
+
+interface AsyncLoadState {
+  bookId: string;
+  status: 'loaded' | 'error';
+  book?: Book;
+}
 
 export default function ReaderScreen() {
   useKeepAwake();
@@ -139,7 +156,7 @@ export default function ReaderScreen() {
   const insets = useSafeAreaInsets();
   const { theme, themeId, themeMode, setThemeMode } = useReaderTheme();
 
-  const targetBookId = id || ALL_BOOKS_META[0]?.id;
+  const targetBookId = id || '';
   const targetBookMeta = useMemo(
     () => (targetBookId ? getBookMetaById(targetBookId) : undefined),
     [targetBookId]
@@ -148,20 +165,48 @@ export default function ReaderScreen() {
     () => (targetBookId ? loadBookById(targetBookId) : undefined),
     [targetBookId]
   );
-  const [asyncBook, setAsyncBook] = useState<Book | undefined>(undefined);
+
+  const [asyncState, setAsyncState] = useState<AsyncLoadState | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
-    if (syncBook || !targetBookId) return;
+    if (syncBook || !targetBookId || !targetBookMeta) return;
     let active = true;
-    loadBookByIdAsync(targetBookId).then((loaded) => {
-      if (active) setAsyncBook(loaded);
-    });
+    loadBookByIdAsync(targetBookId)
+      .then((loaded) => {
+        if (!active) return;
+        if (loaded && loaded.chapters.length > 0) {
+          setAsyncState({ bookId: targetBookId, status: 'loaded', book: loaded });
+        } else {
+          setAsyncState({ bookId: targetBookId, status: 'error' });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAsyncState({ bookId: targetBookId, status: 'error' });
+        }
+      });
     return () => {
       active = false;
     };
-  }, [syncBook, targetBookId]);
+  }, [syncBook, targetBookId, targetBookMeta, retryNonce]);
 
-  const currentBook = syncBook ?? (asyncBook?.id === targetBookId ? asyncBook : undefined);
+  const currentBook =
+    syncBook ??
+    (asyncState?.bookId === targetBookId && asyncState.status === 'loaded'
+      ? asyncState.book
+      : undefined);
+
+  const isLoading =
+    Boolean(targetBookMeta) &&
+    !syncBook &&
+    asyncState?.bookId !== targetBookId;
+
+  const isLoadError =
+    Boolean(targetBookMeta) &&
+    !syncBook &&
+    asyncState?.bookId === targetBookId &&
+    asyncState.status === 'error';
 
   const initialSeq = initialChapter ? parseInt(initialChapter, 10) : 1;
   const initialParaNum = initialParagraph ? parseInt(initialParagraph, 10) : 0;
@@ -169,8 +214,10 @@ export default function ReaderScreen() {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(
     Math.max(0, (Number.isNaN(initialSeq) ? 1 : initialSeq) - 1)
   );
-  const [fontSize, setFontSize] = useState(19);
-  const [lineHeightMultiplier, setLineHeightMultiplier] = useState(2.0);
+  const [fontSize, setFontSize] = useState(DEFAULT_READER_SETTINGS.fontSize);
+  const [lineHeightMultiplier, setLineHeightMultiplier] = useState(
+    DEFAULT_READER_SETTINGS.lineHeightMultiplier
+  );
   const [isSerif, setIsSerif] = useState(true);
   const [textAlign, setTextAlign] = useState<'left' | 'justify'>('left');
   const [paragraphSpacing, setParagraphSpacing] =
@@ -204,29 +251,23 @@ export default function ReaderScreen() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredForKeyRef = useRef<string | null>(null);
 
-  const bookChapters: Chapter[] = useMemo(() => {
-    if (currentBook && currentBook.chapters.length > 0) {
-      return currentBook.chapters;
-    }
-    return [
-      {
-        number: 1,
-        title: 'পাঠ্য লোড হচ্ছে',
-        displayTitle: 'পাঠ্য লোড হচ্ছে',
-        readMinutes: 1,
-        paragraphs: ['পাঠ্য প্রস্তুত করা হচ্ছে...'],
-      },
-    ];
-  }, [currentBook]);
+  const bookChapters: Chapter[] = useMemo(
+    () => (currentBook?.chapters && currentBook.chapters.length > 0 ? currentBook.chapters : []),
+    [currentBook]
+  );
 
-  const currentChapter: Chapter =
-    bookChapters[currentChapterIndex] || bookChapters[0];
+  const safeChapterIndex =
+    bookChapters.length > 0
+      ? Math.min(currentChapterIndex, bookChapters.length - 1)
+      : 0;
+  const currentChapter: Chapter | undefined = bookChapters[safeChapterIndex];
   const nextChapter =
-    currentChapterIndex < bookChapters.length - 1
-      ? bookChapters[currentChapterIndex + 1]
+    safeChapterIndex < bookChapters.length - 1
+      ? bookChapters[safeChapterIndex + 1]
       : null;
 
   const estimatedMinutes = useMemo(() => {
+    if (!currentChapter) return 1;
     if (currentChapter.readMinutes) return currentChapter.readMinutes;
     const words = currentChapter.paragraphs.reduce(
       (sum, p) => sum + p.split(/\s+/).length,
@@ -237,13 +278,13 @@ export default function ReaderScreen() {
 
   useEffect(() => {
     isChromeVisibleRef.current = isChromeVisible;
-    chromeValue.value = withTiming(isChromeVisible ? 1 : 0, { duration: 190 });
+    chromeValue.set(withTiming(isChromeVisible ? 1 : 0, { duration: 190 }));
   }, [isChromeVisible, chromeValue]);
 
   useEffect(() => {
     bookIdRef.current = currentBook?.id ?? null;
-    chapterNumRef.current = currentChapter.number;
-  }, [currentBook?.id, currentChapter.number]);
+    chapterNumRef.current = currentChapter?.number ?? 1;
+  }, [currentBook?.id, currentChapter?.number]);
 
   const progressBarStyle = useAnimatedStyle(() => ({
     width: `${progressShared.value}%`,
@@ -272,7 +313,7 @@ export default function ReaderScreen() {
   }, []);
 
   useEffect(() => {
-    if (!currentBook) return;
+    if (!currentBook || !currentChapter) return;
     StorageService.saveReadingPosition(
       currentBook.id,
       currentChapter.number,
@@ -308,25 +349,25 @@ export default function ReaderScreen() {
       return () => clearTimeout(t);
     }
     restoredForKeyRef.current = restoreKey;
-  }, [currentBook, currentChapter.number, currentChapter.paragraphs.length, initialChapter, initialParaNum]);
+  }, [currentBook, currentChapter, initialChapter, initialParaNum]);
 
   useEffect(() => {
     return () => {
-      if (currentBook) {
+      if (bookIdRef.current) {
         StorageService.saveReadingPosition(
-          currentBook.id,
-          currentChapter.number,
+          bookIdRef.current,
+          chapterNumRef.current,
           topParagraphRef.current,
           progressRef.current
         );
       }
     };
-  }, [currentBook, currentChapter.number]);
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMessage(msg);
-    toastTimerRef.current = setTimeout(() => setToastMessage(null), 2000);
+    toastTimerRef.current = setTimeout(() => setToastMessage(null), 2100);
   }, []);
 
   const handleToggleChrome = useCallback(() => {
@@ -367,20 +408,15 @@ export default function ReaderScreen() {
     showToast(`হরফের আকার: ${toBanglaNumber(nextSize)}`);
   };
 
-  const handleFontSizeSliderChange = (val: number) => {
-    setFontSize(val);
-  };
-
+  const handleFontSizeSliderChange = (val: number) => setFontSize(val);
   const handleFontSizeSlidingComplete = (val: number) => {
     setFontSize(val);
     StorageService.saveReaderSettings({ fontSize: val });
   };
 
   const handleLineHeightSliderChange = (val: number) => {
-    const rounded = Math.round(val * 10) / 10;
-    setLineHeightMultiplier(rounded);
+    setLineHeightMultiplier(Math.round(val * 10) / 10);
   };
-
   const handleLineHeightSlidingComplete = (val: number) => {
     const rounded = Math.round(val * 10) / 10;
     setLineHeightMultiplier(rounded);
@@ -422,41 +458,73 @@ export default function ReaderScreen() {
     StorageService.saveReaderSettings({ firstLineIndent: next });
   };
 
+  const handleResetSettings = async () => {
+    const defaults = await StorageService.resetReaderSettings();
+    setFontSize(defaults.fontSize);
+    setLineHeightMultiplier(defaults.lineHeightMultiplier);
+    setIsSerif(defaults.fontFamily === 'serif');
+    setTextAlign(defaults.textAlign);
+    setParagraphSpacing(defaults.paragraphSpacing);
+    setMarginSize(defaults.marginSize);
+    setFirstLineIndent(defaults.firstLineIndent);
+    setThemeMode('auto');
+    showToast('ডিফল্ট পাঠ বিন্যাস ফিরিয়ে আনা হয়েছে');
+  };
+
+  const toggleParagraphBookmark = useCallback(
+    async (index: number, text: string) => {
+      if (!currentBook || !currentChapter) return;
+      const isAlready = bookmarkedParagraphs.includes(index);
+      if (isAlready) {
+        const list = await StorageService.getBookmarks();
+        const target = list.find(
+          (b) =>
+            b.bookId === currentBook.id &&
+            b.chapterSequence === currentChapter.number &&
+            b.paragraphIndex === index
+        );
+        if (target) {
+          await StorageService.removeBookmark(target.id);
+          setBookmarkedParagraphs((prev) => prev.filter((i) => i !== index));
+          showToast('বুকমার্ক সরানো হয়েছে');
+        }
+      } else {
+        await StorageService.addBookmark({
+          bookId: currentBook.id,
+          bookTitle: currentBook.title,
+          chapterSequence: currentChapter.number,
+          chapterTitle: currentChapter.displayTitle || currentChapter.title,
+          paragraphIndex: index,
+          quoteSnippet: text.slice(0, 140),
+        });
+        setBookmarkedParagraphs((prev) => [...prev, index]);
+        showToast('অনুচ্ছেদটি বুকমার্কে সংরক্ষিত হয়েছে');
+      }
+    },
+    [currentBook, currentChapter, bookmarkedParagraphs, showToast]
+  );
+
+  const handleQuickBookmark = useCallback(() => {
+    if (!currentChapter || currentChapter.paragraphs.length === 0) return;
+    hapticSelection();
+    const idx = Math.min(
+      Math.max(0, topParagraphRef.current),
+      currentChapter.paragraphs.length - 1
+    );
+    const paraText = currentChapter.paragraphs[idx] || '';
+    toggleParagraphBookmark(idx, paraText);
+  }, [currentChapter, toggleParagraphBookmark]);
+
   const handleLongPressParagraph = useCallback((index: number, text: string) => {
     hapticImpact();
     setActionParagraph({ index, text });
   }, []);
 
   const handleToggleBookmarkForAction = async () => {
-    if (!currentBook || !actionParagraph) return;
+    if (!actionParagraph) return;
     const { index, text } = actionParagraph;
     setActionParagraph(null);
-    const isAlready = bookmarkedParagraphs.includes(index);
-    if (isAlready) {
-      const list = await StorageService.getBookmarks();
-      const target = list.find(
-        (b) =>
-          b.bookId === currentBook.id &&
-          b.chapterSequence === currentChapter.number &&
-          b.paragraphIndex === index
-      );
-      if (target) {
-        await StorageService.removeBookmark(target.id);
-        setBookmarkedParagraphs((prev) => prev.filter((i) => i !== index));
-        showToast('বুকমার্ক সরানো হয়েছে');
-      }
-    } else {
-      await StorageService.addBookmark({
-        bookId: currentBook.id,
-        bookTitle: currentBook.title,
-        chapterSequence: currentChapter.number,
-        chapterTitle: currentChapter.displayTitle || currentChapter.title,
-        paragraphIndex: index,
-        quoteSnippet: text.slice(0, 140),
-      });
-      setBookmarkedParagraphs((prev) => [...prev, index]);
-      showToast('অনুচ্ছেদটি বুকমার্কে সংরক্ষিত হয়েছে');
-    }
+    await toggleParagraphBookmark(index, text);
   };
 
   const handleShareParagraph = async () => {
@@ -486,7 +554,10 @@ export default function ReaderScreen() {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       const total = contentSize.height - layoutMeasurement.height;
       if (total > 0) {
-        const pct = Math.min(100, Math.max(0, Math.round((contentOffset.y / total) * 100)));
+        const pct = Math.min(
+          100,
+          Math.max(0, Math.round((contentOffset.y / total) * 100))
+        );
         if (pct !== progressRef.current) {
           progressRef.current = pct;
           progressShared.set(pct);
@@ -494,10 +565,17 @@ export default function ReaderScreen() {
       }
 
       const currentY = contentOffset.y;
-      if (currentY > lastScrollY.current + 50 && currentY > 100 && isChromeVisibleRef.current) {
+      if (
+        currentY > lastScrollY.current + 50 &&
+        currentY > 100 &&
+        isChromeVisibleRef.current
+      ) {
         isChromeVisibleRef.current = false;
         setIsChromeVisible(false);
-      } else if (currentY < lastScrollY.current - 60 && !isChromeVisibleRef.current) {
+      } else if (
+        currentY < lastScrollY.current - 60 &&
+        !isChromeVisibleRef.current
+      ) {
         isChromeVisibleRef.current = true;
         setIsChromeVisible(true);
       }
@@ -528,7 +606,9 @@ export default function ReaderScreen() {
 
   const bookTitle = currentBook?.title || targetBookMeta?.title || 'পাঠ্য';
   const bookAuthor = currentBook?.author || targetBookMeta?.author || '';
-  const chapterDisplayTitle = currentChapter.displayTitle || currentChapter.title;
+  const chapterDisplayTitle =
+    currentChapter?.displayTitle || currentChapter?.title || '';
+  const chapterNumber = currentChapter?.number ?? 1;
 
   const chapterHeader = useMemo(
     () => (
@@ -540,7 +620,7 @@ export default function ReaderScreen() {
           ]}>
           <Text style={[styles.chapterMetaText, { color: theme.textSecondary }]}>
             {renderWithNotoNumbers(
-              `পর্ব ${toBanglaNumber(currentChapter.number)} / ${toBanglaNumber(bookChapters.length)} • প্রায় ${toBanglaNumber(estimatedMinutes)} মিনিট`
+              `পর্ব ${toBanglaNumber(chapterNumber)} / ${toBanglaNumber(bookChapters.length)} • প্রায় ${toBanglaNumber(estimatedMinutes)} মিনিট`
             )}
           </Text>
         </View>
@@ -550,7 +630,7 @@ export default function ReaderScreen() {
             styles.chapterTitleMain,
             { color: theme.textPrimary, fontFamily: headingFontFamily },
           ]}>
-          {chapterDisplayTitle}
+          {renderWithNotoNumbers(chapterDisplayTitle, true)}
         </Text>
 
         {bookAuthor ? (
@@ -559,13 +639,18 @@ export default function ReaderScreen() {
           </Text>
         ) : null}
 
-        <View style={[styles.chapterDivider, { backgroundColor: theme.accentTerracotta }]} />
+        <View
+          style={[
+            styles.chapterDivider,
+            { backgroundColor: theme.accentTerracotta },
+          ]}
+        />
       </Pressable>
     ),
     [
       handleToggleChrome,
       theme,
-      currentChapter.number,
+      chapterNumber,
       bookChapters.length,
       estimatedMinutes,
       headingFontFamily,
@@ -586,40 +671,74 @@ export default function ReaderScreen() {
           </Text>
         </View>
 
-        {nextChapter && (
+        {nextChapter ? (
           <Pressable
-            onPress={() => handleChapterChange(currentChapterIndex + 1)}
-            style={[
+            onPress={() => handleChapterChange(safeChapterIndex + 1)}
+            accessibilityRole="button"
+            style={({ pressed }) => [
               styles.nextChapterCard,
-              { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderSubtle,
+                opacity: pressed ? 0.85 : 1,
+              },
             ]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.nextLabel, { color: theme.accentTerracotta }]}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text
+                style={[styles.nextLabel, { color: theme.accentTerracotta }]}>
                 পরবর্তী পর্ব
               </Text>
-              <Text numberOfLines={1} style={[styles.nextTitle, { color: theme.textPrimary }]}>
-                {nextChapter.displayTitle || nextChapter.title}
+              <Text
+                numberOfLines={1}
+                style={[styles.nextTitle, { color: theme.textPrimary }]}>
+                {renderWithNotoNumbers(
+                  nextChapter.displayTitle || nextChapter.title,
+                  true
+                )}
               </Text>
               {nextChapter.readMinutes ? (
                 <Text style={[styles.nextMeta, { color: theme.textMuted }]}>
-                  {renderWithNotoNumbers(`প্রায় ${toBanglaNumber(nextChapter.readMinutes)} মিনিট পাঠ`)}
+                  {renderWithNotoNumbers(
+                    `প্রায় ${toBanglaNumber(nextChapter.readMinutes)} মিনিট পাঠ`
+                  )}
                 </Text>
               ) : null}
             </View>
-            <Ionicons name="arrow-forward" size={18} color={theme.accentTerracotta} />
+            <Ionicons
+              name="arrow-forward"
+              size={18}
+              color={theme.accentTerracotta}
+            />
           </Pressable>
-        )}
+        ) : null}
 
-        <View style={[styles.chapterEndNav, { borderTopColor: theme.borderSubtle }]}>
-          {currentChapterIndex > 0 ? (
+        <View
+          style={[
+            styles.chapterEndNav,
+            { borderTopColor: theme.borderSubtle },
+          ]}>
+          {safeChapterIndex > 0 ? (
             <Pressable
-              onPress={() => handleChapterChange(currentChapterIndex - 1)}
-              style={[
+              onPress={() => handleChapterChange(safeChapterIndex - 1)}
+              accessibilityRole="button"
+              style={({ pressed }) => [
                 styles.chapterNavBtn,
-                { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.borderSubtle,
+                  opacity: pressed ? 0.8 : 1,
+                },
               ]}>
-              <Ionicons name="chevron-back" size={16} color={theme.accentTerracotta} />
-              <Text style={[styles.chapterNavBtnText, { color: theme.textPrimary }]}>
+              <Ionicons
+                name="chevron-back"
+                size={16}
+                color={theme.accentTerracotta}
+              />
+              <Text
+                style={[
+                  styles.chapterNavBtnText,
+                  { color: theme.textPrimary },
+                ]}>
                 পূর্ববর্তী পর্ব
               </Text>
             </Pressable>
@@ -627,23 +746,36 @@ export default function ReaderScreen() {
             <View style={{ flex: 1 }} />
           )}
 
-          {nextChapter && (
+          {nextChapter ? (
             <Pressable
-              onPress={() => handleChapterChange(currentChapterIndex + 1)}
-              style={[
+              onPress={() => handleChapterChange(safeChapterIndex + 1)}
+              accessibilityRole="button"
+              style={({ pressed }) => [
                 styles.chapterNavBtn,
-                { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.borderSubtle,
+                  opacity: pressed ? 0.8 : 1,
+                },
               ]}>
-              <Text style={[styles.chapterNavBtnText, { color: theme.textPrimary }]}>
+              <Text
+                style={[
+                  styles.chapterNavBtnText,
+                  { color: theme.textPrimary },
+                ]}>
                 পরবর্তী পর্ব
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={theme.accentTerracotta} />
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={theme.accentTerracotta}
+              />
             </Pressable>
-          )}
+          ) : null}
         </View>
       </View>
     ),
-    [theme, nextChapter, currentChapterIndex, handleChapterChange]
+    [theme, nextChapter, safeChapterIndex, handleChapterChange]
   );
 
   const renderParagraph = useCallback(
@@ -679,53 +811,111 @@ export default function ReaderScreen() {
     ]
   );
 
+  // Not-found book state
+  if (!targetBookMeta) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.canvas }]}>
+        <StatusBar style={themeId === 'deep-forest' ? 'light' : 'dark'} />
+        <GlassHeader backButton title="পাঠক" />
+        <View style={styles.stateCenterWrap}>
+          <EmptyState
+            icon="book-outline"
+            title="বইটি খুঁজে পাওয়া যায়নি"
+            description="অনুরোধকৃত বইটি পাঠাগারে পাওয়া যায়নি।"
+            actionLabel="পাঠাগারে ফিরুন"
+            onAction={() => router.replace('/')}
+            themeOverride={theme}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  // Error state with Retry + Back
+  if (isLoadError) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.canvas }]}>
+        <StatusBar style={themeId === 'deep-forest' ? 'light' : 'dark'} />
+        <GlassHeader backButton title={bookTitle} />
+        <View style={styles.stateCenterWrap}>
+          <EmptyState
+            icon="alert-circle-outline"
+            title="পাঠ্য লোড করতে সমস্যা হয়েছে"
+            description="বইটির পাঠ্য প্রস্তুত করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।"
+            actionLabel="আবার চেষ্টা করুন"
+            onAction={() => {
+              setAsyncState(null);
+              setRetryNonce((n) => n + 1);
+            }}
+            secondaryActionLabel="ফিরে যান"
+            onSecondaryAction={() => router.back()}
+            themeOverride={theme}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  const hasChapterBookmark = bookmarkedParagraphs.length > 0;
+  const iconBtnBg = theme.isDark
+    ? 'rgba(255,255,255,0.08)'
+    : 'rgba(30,25,20,0.05)';
+
   return (
     <View style={[styles.container, { backgroundColor: theme.canvas }]}>
       <StatusBar style={themeId === 'deep-forest' ? 'light' : 'dark'} />
 
       <BlurTargetView ref={readerBlurTargetRef} style={styles.container}>
-        {theme.hasPaperTexture && (
+        {theme.hasPaperTexture ? (
           <Image
             source={require('@/assets/images/book-paper-texture.png')}
             resizeMode="repeat"
             style={styles.paperTextureBg}
             pointerEvents="none"
           />
-        )}
+        ) : null}
 
-        {/* Virtualized Paragraph FlatList */}
-        <FlatList
-          ref={flatListRef}
-          data={currentChapter.paragraphs}
-          keyExtractor={(_, idx) => `${currentChapter.number}-${idx}`}
-          renderItem={renderParagraph}
-          extraData={`${proseFontFamily}-${fontSize}-${calculatedLineHeight}-${textAlign}-${paragraphGap}-${firstLineIndent}-${themeId}-${bookmarkedParagraphs.length}`}
-          ListHeaderComponent={chapterHeader}
-          ListFooterComponent={chapterFooter}
-          onScroll={handleScroll}
-          onScrollEndDrag={commitScrollProgress}
-          onMomentumScrollEnd={commitScrollProgress}
-          scrollEventThrottle={16}
-          onViewableItemsChanged={handleViewableItemsChanged}
-          viewabilityConfig={VIEWABILITY_CONFIG}
-          initialNumToRender={12}
-          maxToRenderPerBatch={10}
-          updateCellsBatchingPeriod={40}
-          windowSize={7}
-          removeClippedSubviews={Platform.OS === 'android'}
-          onScrollToIndexFailed={() => {
-            // Safe no-op fallback if layout not measured yet
-          }}
-          contentContainerStyle={[
-            styles.readingScrollContent,
-            {
-              paddingHorizontal: horizontalPad,
-              paddingTop: insets.top + 86,
-              paddingBottom: insets.bottom + 120,
-            },
-          ]}
-          showsVerticalScrollIndicator={false}
-        />
+        {isLoading || !currentChapter ? (
+          <ReaderLoadingView
+            bookTitle={bookTitle}
+            bookAuthor={bookAuthor}
+            theme={theme}
+            topPadding={insets.top + 88}
+          />
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={currentChapter.paragraphs}
+            keyExtractor={(_, idx) => `${currentChapter.number}-${idx}`}
+            renderItem={renderParagraph}
+            extraData={`${proseFontFamily}-${fontSize}-${calculatedLineHeight}-${textAlign}-${paragraphGap}-${firstLineIndent}-${themeId}-${bookmarkedParagraphs.length}`}
+            ListHeaderComponent={chapterHeader}
+            ListFooterComponent={chapterFooter}
+            onScroll={handleScroll}
+            onScrollEndDrag={commitScrollProgress}
+            onMomentumScrollEnd={commitScrollProgress}
+            scrollEventThrottle={16}
+            onViewableItemsChanged={handleViewableItemsChanged}
+            viewabilityConfig={VIEWABILITY_CONFIG}
+            initialNumToRender={12}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={40}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
+            onScrollToIndexFailed={() => {
+              // Safe fallback when paragraph layout isn't measured yet
+            }}
+            contentContainerStyle={[
+              styles.readingScrollContent,
+              {
+                paddingHorizontal: horizontalPad,
+                paddingTop: insets.top + 88,
+                paddingBottom: insets.bottom + 124,
+              },
+            ]}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </BlurTargetView>
 
       {/* Top Reading Progress Bar */}
@@ -752,11 +942,12 @@ export default function ReaderScreen() {
         ]}
         pointerEvents={isChromeVisible ? 'auto' : 'none'}>
         <GlassSurface
-          radius={24}
-          intensity={72}
+          radius={22}
+          intensity={74}
           elevation="e2"
           themeOverride={theme}
           blurTarget={readerBlurTargetRef}
+          style={styles.hudMaxWidth}
           contentStyle={styles.glassHeader}>
           <View style={styles.headerInnerRow}>
             <Pressable
@@ -764,18 +955,17 @@ export default function ReaderScreen() {
                 hapticSelection();
                 router.back();
               }}
-              hitSlop={4}
+              accessibilityRole="button"
               accessibilityLabel="ফিরে যান"
-              style={[
+              style={({ pressed }) => [
                 styles.iconButton,
                 {
-                  backgroundColor: theme.isDark
-                    ? 'rgba(255,255,255,0.08)'
-                    : 'rgba(30,25,20,0.055)',
-                  borderColor: theme.glassRimTop,
+                  backgroundColor: iconBtnBg,
+                  borderColor: theme.borderSubtle,
+                  opacity: pressed ? 0.72 : 1,
                 },
               ]}>
-              <Ionicons name="arrow-back" size={19} color={theme.textPrimary} />
+              <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
             </Pressable>
 
             <Pressable
@@ -783,34 +973,77 @@ export default function ReaderScreen() {
                 hapticSelection();
                 setShowTocModal(true);
               }}
+              disabled={bookChapters.length === 0}
+              accessibilityRole="button"
               accessibilityLabel="সূচিপত্র খুলুন"
               style={styles.titleCenter}>
-              <Text numberOfLines={1} style={[styles.bookHeaderTitle, { color: theme.textPrimary }]}>
-                {bookTitle}
+              <Text
+                numberOfLines={1}
+                style={[styles.bookHeaderTitle, { color: theme.textPrimary }]}>
+                {renderWithNotoNumbers(bookTitle, true)}
               </Text>
-              <Text numberOfLines={1} style={[styles.chapterHeaderSubtitle, { color: theme.textMuted }]}>
-                {renderWithNotoNumbers(`${chapterDisplayTitle} • ${toBanglaNumber(readingProgress)}%`)}
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.chapterHeaderSubtitle,
+                  { color: theme.textMuted },
+                ]}>
+                {chapterDisplayTitle
+                  ? renderWithNotoNumbers(
+                      `${chapterDisplayTitle} • ${toBanglaNumber(readingProgress)}%`
+                    )
+                  : 'প্রস্তুত হচ্ছে...'}
               </Text>
             </Pressable>
 
-            <Pressable
-              onPress={() => {
-                hapticSelection();
-                setShowTocModal(true);
-              }}
-              hitSlop={4}
-              accessibilityLabel="সূচিপত্র"
-              style={[
-                styles.iconButton,
-                {
-                  backgroundColor: theme.isDark
-                    ? 'rgba(255,255,255,0.08)'
-                    : 'rgba(30,25,20,0.055)',
-                  borderColor: theme.glassRimTop,
-                },
-              ]}>
-              <Ionicons name="list" size={18} color={theme.accentTerracotta} />
-            </Pressable>
+            <View style={styles.headerActionsRight}>
+              <Pressable
+                onPress={handleQuickBookmark}
+                disabled={!currentChapter}
+                accessibilityRole="button"
+                accessibilityLabel="বর্তমান অনুচ্ছেদ বুকমার্ক করুন"
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  {
+                    backgroundColor: iconBtnBg,
+                    borderColor: theme.borderSubtle,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}>
+                <Ionicons
+                  name={hasChapterBookmark ? 'bookmark' : 'bookmark-outline'}
+                  size={18}
+                  color={
+                    hasChapterBookmark
+                      ? theme.accentTerracotta
+                      : theme.textPrimary
+                  }
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  hapticSelection();
+                  setShowTocModal(true);
+                }}
+                disabled={bookChapters.length === 0}
+                accessibilityRole="button"
+                accessibilityLabel="সূচিপত্র"
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  {
+                    backgroundColor: iconBtnBg,
+                    borderColor: theme.borderSubtle,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}>
+                <Ionicons
+                  name="list"
+                  size={19}
+                  color={theme.accentTerracotta}
+                />
+              </Pressable>
+            </View>
           </View>
         </GlassSurface>
       </Animated.View>
@@ -825,30 +1058,41 @@ export default function ReaderScreen() {
         pointerEvents={isChromeVisible ? 'auto' : 'none'}>
         <GlassSurface
           radius={RADIUS.pill}
-          intensity={74}
+          intensity={76}
           elevation="e2"
           themeOverride={theme}
           blurTarget={readerBlurTargetRef}
           contentStyle={styles.floatingControlPill}>
           {/* Prev Chapter */}
           <Pressable
-            onPress={() => handleChapterChange(currentChapterIndex - 1)}
-            disabled={currentChapterIndex === 0}
+            onPress={() => handleChapterChange(safeChapterIndex - 1)}
+            disabled={safeChapterIndex === 0}
+            hitSlop={4}
+            accessibilityRole="button"
             accessibilityLabel="পূর্ববর্তী পর্ব"
             style={[
               styles.pillChapterBtn,
-              { opacity: currentChapterIndex === 0 ? 0.35 : 1 },
+              { opacity: safeChapterIndex === 0 ? 0.32 : 1 },
             ]}>
-            <Ionicons name="chevron-back" size={18} color={theme.textPrimary} />
+            <Ionicons
+              name="chevron-back"
+              size={19}
+              color={theme.textPrimary}
+            />
           </Pressable>
 
-          <View style={[styles.controlDivider, { backgroundColor: theme.borderSubtle }]} />
+          <View
+            style={[
+              styles.controlDivider,
+              { backgroundColor: theme.borderSubtle },
+            ]}
+          />
 
-          {/* Theme Dots */}
+          {/* Theme Dots — highlights resolved themeId even in auto mode */}
           <View style={styles.themeDotsGroup}>
             {(Object.keys(THEMES) as ThemeId[]).map((tId) => {
               const tItem = THEMES[tId];
-              const isActive = themeMode === tId;
+              const isActive = themeId === tId;
               return (
                 <Pressable
                   key={tId}
@@ -856,13 +1100,17 @@ export default function ReaderScreen() {
                     hapticSelection();
                     setThemeMode(tId);
                   }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
                   accessibilityLabel={`থিম: ${tItem.nameBangla}`}
-                  hitSlop={6}
+                  hitSlop={11}
                   style={[
                     styles.themeCircleDot,
                     {
                       backgroundColor: tItem.canvas,
-                      borderColor: isActive ? theme.accentTerracotta : tItem.borderStrong,
+                      borderColor: isActive
+                        ? theme.accentTerracotta
+                        : tItem.borderStrong,
                       borderWidth: isActive ? 2.5 : 1,
                     },
                   ]}
@@ -871,28 +1119,50 @@ export default function ReaderScreen() {
             })}
           </View>
 
-          <View style={[styles.controlDivider, { backgroundColor: theme.borderSubtle }]} />
+          <View
+            style={[
+              styles.controlDivider,
+              { backgroundColor: theme.borderSubtle },
+            ]}
+          />
 
           {/* Font Size Quick Controls */}
           <View style={styles.fontScalerGroup}>
             <Pressable
               onPress={() => handleFontSizeChange(-1)}
+              hitSlop={6}
+              accessibilityRole="button"
               accessibilityLabel="হরফ ছোট করুন"
               style={styles.scaleBtn}>
-              <Text style={[styles.scaleBtnText, { color: theme.textPrimary }]}>অ-</Text>
+              <Text style={[styles.scaleBtnText, { color: theme.textPrimary }]}>
+                অ-
+              </Text>
             </Pressable>
-            <Text style={[styles.fontSizeLabel, { color: theme.accentTerracotta }]}>
+            <Text
+              style={[
+                styles.fontSizeLabel,
+                { color: theme.accentTerracotta },
+              ]}>
               {toBanglaNumber(fontSize)}
             </Text>
             <Pressable
               onPress={() => handleFontSizeChange(1)}
+              hitSlop={6}
+              accessibilityRole="button"
               accessibilityLabel="হরফ বড় করুন"
               style={styles.scaleBtn}>
-              <Text style={[styles.scaleBtnText, { color: theme.textPrimary }]}>অ+</Text>
+              <Text style={[styles.scaleBtnText, { color: theme.textPrimary }]}>
+                অ+
+              </Text>
             </Pressable>
           </View>
 
-          <View style={[styles.controlDivider, { backgroundColor: theme.borderSubtle }]} />
+          <View
+            style={[
+              styles.controlDivider,
+              { backgroundColor: theme.borderSubtle },
+            ]}
+          />
 
           {/* Typography Sheet Trigger */}
           <Pressable
@@ -900,29 +1170,47 @@ export default function ReaderScreen() {
               hapticSelection();
               setShowSettingsModal(true);
             }}
+            hitSlop={4}
+            accessibilityRole="button"
             accessibilityLabel="পাঠ ও অক্ষর বিন্যাস"
-            style={[styles.settingsTriggerBtn, { backgroundColor: theme.surface }]}>
-            <Ionicons name="options-outline" size={17} color={theme.accentTerracotta} />
+            style={[
+              styles.settingsTriggerBtn,
+              { backgroundColor: theme.surface },
+            ]}>
+            <Ionicons
+              name="options-outline"
+              size={18}
+              color={theme.accentTerracotta}
+            />
           </Pressable>
 
           {/* Next Chapter */}
           <Pressable
-            onPress={() => handleChapterChange(currentChapterIndex + 1)}
+            onPress={() => handleChapterChange(safeChapterIndex + 1)}
             disabled={!nextChapter}
+            hitSlop={4}
+            accessibilityRole="button"
             accessibilityLabel="পরবর্তী পর্ব"
-            style={[styles.pillChapterBtn, { opacity: !nextChapter ? 0.35 : 1 }]}>
-            <Ionicons name="chevron-forward" size={18} color={theme.textPrimary} />
+            style={[
+              styles.pillChapterBtn,
+              { opacity: !nextChapter ? 0.32 : 1 },
+            ]}>
+            <Ionicons
+              name="chevron-forward"
+              size={19}
+              color={theme.textPrimary}
+            />
           </Pressable>
         </GlassSurface>
       </Animated.View>
 
       {/* Toast */}
-      {toastMessage && (
+      {toastMessage ? (
         <View
           style={[
             styles.toastPill,
             {
-              bottom: Math.max(insets.bottom, 12) + 74,
+              bottom: Math.max(insets.bottom, 12) + 78,
               backgroundColor: theme.textPrimary,
             },
           ]}>
@@ -930,505 +1218,72 @@ export default function ReaderScreen() {
             {renderWithNotoNumbers(toastMessage)}
           </Text>
         </View>
-      )}
+      ) : null}
 
-      {/* Long-press Paragraph Action Modal */}
-      <Modal
+      {/* Modular Sheets */}
+      <ParagraphActionSheet
         visible={Boolean(actionParagraph)}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setActionParagraph(null)}>
-        <View style={styles.modalBackdrop}>
-          <Pressable
-            style={styles.backdropDismissArea}
-            onPress={() => setActionParagraph(null)}
-            accessibilityLabel="বন্ধ করুন"
-          />
-          <View
-            style={[
-              styles.actionSheet,
-              {
-                backgroundColor: theme.canvas,
-                borderColor: theme.borderStrong,
-                paddingBottom: Math.max(insets.bottom, 16) + 8,
-              },
-            ]}>
-            <Text numberOfLines={2} style={[styles.actionSnippet, { color: theme.textSecondary }]}>
-              “{actionParagraph?.text}”
-            </Text>
+        onClose={() => setActionParagraph(null)}
+        snippetText={actionParagraph?.text || ''}
+        isBookmarked={Boolean(
+          actionParagraph &&
+            bookmarkedParagraphs.includes(actionParagraph.index)
+        )}
+        theme={theme}
+        onToggleBookmark={handleToggleBookmarkForAction}
+        onShare={handleShareParagraph}
+      />
 
-            <Pressable
-              onPress={handleToggleBookmarkForAction}
-              style={[styles.actionBtn, { backgroundColor: theme.surface }]}>
-              <Ionicons
-                name={
-                  actionParagraph && bookmarkedParagraphs.includes(actionParagraph.index)
-                    ? 'bookmark'
-                    : 'bookmark-outline'
-                }
-                size={19}
-                color={theme.accentTerracotta}
-              />
-              <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>
-                {actionParagraph && bookmarkedParagraphs.includes(actionParagraph.index)
-                  ? 'বুকমার্ক সরান'
-                  : 'বুকমার্কে সংরক্ষণ করুন'}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={handleShareParagraph}
-              style={[styles.actionBtn, { backgroundColor: theme.surface }]}>
-              <Ionicons name="share-outline" size={19} color={theme.accentSage} />
-              <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>
-                অনুচ্ছেদ শেয়ার করুন
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      {/* TOC Modal */}
-      <Modal
+      <ReaderTocSheet
         visible={showTocModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowTocModal(false)}>
-        <View style={styles.modalBackdrop}>
-          <Pressable
-            style={styles.backdropDismissArea}
-            onPress={() => setShowTocModal(false)}
-            accessibilityLabel="বন্ধ করুন"
-          />
-          <View
-            style={[
-              styles.modalSheet,
-              { backgroundColor: theme.canvas, borderColor: theme.borderStrong },
-            ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: theme.borderSubtle }]}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>
-                সূচিপত্র ({toBanglaNumber(bookChapters.length)} পর্ব)
-              </Text>
-              <Pressable
-                onPress={() => setShowTocModal(false)}
-                accessibilityLabel="বন্ধ করুন"
-                style={styles.modalCloseBtn}>
-                <Ionicons name="close" size={22} color={theme.textPrimary} />
-              </Pressable>
-            </View>
+        onClose={() => setShowTocModal(false)}
+        chapters={bookChapters}
+        currentChapterIndex={safeChapterIndex}
+        literaryType={targetBookMeta.literaryType}
+        theme={theme}
+        onSelectChapter={handleChapterChange}
+      />
 
-            <FlatList
-              data={bookChapters}
-              keyExtractor={(ch) => `toc-${ch.number}`}
-              contentContainerStyle={styles.tocModalList}
-              renderItem={({ item, index }) => {
-                const isActive = index === currentChapterIndex;
-                return (
-                  <Pressable
-                    onPress={() => handleChapterChange(index)}
-                    style={[
-                      styles.tocItem,
-                      {
-                        backgroundColor: isActive ? theme.surface : 'transparent',
-                        borderColor: isActive ? theme.accentTerracotta : theme.borderSubtle,
-                      },
-                    ]}>
-                    <Text
-                      style={[
-                        styles.tocNum,
-                        { color: isActive ? theme.accentTerracotta : theme.textMuted },
-                      ]}>
-                      {toBanglaNumber(item.number)}
-                    </Text>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.tocItemTitle,
-                          { color: isActive ? theme.accentTerracotta : theme.textPrimary },
-                        ]}>
-                        {item.displayTitle || item.title}
-                      </Text>
-                      {item.readMinutes ? (
-                        <Text style={[styles.tocItemSub, { color: theme.textMuted }]}>
-                          {renderWithNotoNumbers(`প্রায় ${toBanglaNumber(item.readMinutes)} মিনিট`)}
-                        </Text>
-                      ) : null}
-                    </View>
-                    {isActive && (
-                      <Ionicons name="checkmark-circle" size={18} color={theme.accentTerracotta} />
-                    )}
-                  </Pressable>
-                );
-              }}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Typography Settings Sheet */}
-      <Modal
+      <ReaderSettingsSheet
         visible={showSettingsModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowSettingsModal(false)}>
-        <View style={styles.modalBackdrop}>
-          <Pressable
-            style={styles.backdropDismissArea}
-            onPress={() => setShowSettingsModal(false)}
-            accessibilityLabel="বন্ধ করুন"
-          />
-          <View
-            style={[
-              styles.settingsSheet,
-              {
-                backgroundColor: theme.canvas,
-                borderColor: theme.borderStrong,
-              },
-            ]}>
-            <View style={styles.sheetHandleWrap}>
-              <View style={[styles.sheetHandle, { backgroundColor: theme.borderStrong }]} />
-            </View>
-            <View style={[styles.modalHeader, { borderBottomColor: theme.borderSubtle }]}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>
-                পাঠ ও অক্ষর বিন্যাস
-              </Text>
-              <Pressable
-                onPress={() => setShowSettingsModal(false)}
-                accessibilityLabel="বন্ধ করুন"
-                style={styles.modalCloseBtn}>
-                <Ionicons name="close" size={22} color={theme.textPrimary} />
-              </Pressable>
-            </View>
-
-            <ScrollView
-              style={styles.settingsScroll}
-              contentContainerStyle={[
-                styles.settingsBody,
-                { paddingBottom: Math.max(insets.bottom, 16) + 18 },
-              ]}
-              nestedScrollEnabled
-              keyboardShouldPersistTaps="handled"
-              overScrollMode="never"
-              showsVerticalScrollIndicator>
-              {/* Live Typography Preview */}
-              <View
-                style={[
-                  styles.previewBox,
-                  { backgroundColor: theme.card, borderColor: theme.borderSubtle },
-                ]}>
-                <Text
-                  style={{
-                    fontSize,
-                    lineHeight: calculatedLineHeight,
-                    color: theme.textPrimary,
-                    fontFamily: proseFontFamily,
-                  }}>
-                  {renderWithNotoNumbers(
-                    `${firstLineIndent ? '    ' : ''}পথের শেষ কোথায় কে জানে? কিন্তু পথিক চলার আনন্দেই সমৃদ্ধ হয়।`
-                  )}
-                </Text>
-              </View>
-
-              {/* Theme Mode Selector (including Auto) */}
-              <View style={styles.settingGroup}>
-                <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>
-                  পাঠের থিম
-                </Text>
-                <ScrollView
-                  horizontal
-                  nestedScrollEnabled
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.themePillsRow}>
-                  {(
-                    [
-                      ['auto', 'অটো (সিস্টেম)'],
-                      ['paper-beige', THEMES['paper-beige'].nameBangla],
-                      ['antique-book', THEMES['antique-book'].nameBangla],
-                      ['terracotta', THEMES.terracotta.nameBangla],
-                      ['deep-forest', THEMES['deep-forest'].nameBangla],
-                    ] as [ThemeMode, string][]
-                  ).map(([mode, label]) => {
-                    const active = themeMode === mode;
-                    return (
-                      <Pressable
-                        key={mode}
-                        onPress={() => {
-                          hapticSelection();
-                          setThemeMode(mode);
-                        }}
-                        style={[
-                          styles.themePillBtn,
-                          active
-                            ? {
-                                backgroundColor: theme.accentTerracotta,
-                                borderColor: theme.accentTerracotta,
-                              }
-                            : { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                        ]}>
-                        <Text
-                          style={[
-                            styles.optionBtnText,
-                            { color: active ? '#FFFFFF' : theme.textPrimary },
-                          ]}>
-                          {label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-
-              {/* Font Family */}
-              <View style={styles.settingGroup}>
-                <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>
-                  বাংলা হরফের ধরন
-                </Text>
-                <View style={styles.optionRow}>
-                  <Pressable
-                    onPress={() => handleSetFontFamily(true)}
-                    style={[
-                      styles.optionBtn,
-                      isSerif
-                        ? {
-                            backgroundColor: theme.accentTerracotta,
-                            borderColor: theme.accentTerracotta,
-                          }
-                        : { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                    ]}>
-                    <Text
-                      style={[
-                        styles.optionBtnText,
-                        {
-                          fontFamily: FONTS.serifBold,
-                          color: isSerif ? '#FFFFFF' : theme.textPrimary,
-                        },
-                      ]}>
-                      নোটো সেরিফ (বই)
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleSetFontFamily(false)}
-                    style={[
-                      styles.optionBtn,
-                      !isSerif
-                        ? {
-                            backgroundColor: theme.accentTerracotta,
-                            borderColor: theme.accentTerracotta,
-                          }
-                        : { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                    ]}>
-                    <Text
-                      style={[
-                        styles.optionBtnText,
-                        {
-                          fontFamily: FONTS.sansBold,
-                          color: !isSerif ? '#FFFFFF' : theme.textPrimary,
-                        },
-                      ]}>
-                      হিন্দ শিলিগুড়ি (আধুনিক)
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* Font Size Slider */}
-              <View style={styles.settingGroup}>
-                <View style={styles.settingLabelRow}>
-                  <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>
-                    হরফের আকার
-                  </Text>
-                  <Text style={[styles.settingValText, { color: theme.accentTerracotta }]}>
-                    {toBanglaNumber(fontSize)}
-                  </Text>
-                </View>
-                <Slider
-                  minimumValue={15}
-                  maximumValue={30}
-                  step={1}
-                  value={fontSize}
-                  onValueChange={handleFontSizeSliderChange}
-                  onSlidingComplete={handleFontSizeSlidingComplete}
-                  minimumTrackTintColor={theme.accentTerracotta}
-                  maximumTrackTintColor={theme.borderStrong}
-                  thumbTintColor={theme.accentTerracotta}
-                />
-              </View>
-
-              {/* Line Height Slider */}
-              <View style={styles.settingGroup}>
-                <View style={styles.settingLabelRow}>
-                  <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>
-                    লাইনের দূরত্ব
-                  </Text>
-                  <Text style={[styles.settingValText, { color: theme.accentTerracotta }]}>
-                    {toBanglaNumber(lineHeightMultiplier)}x
-                  </Text>
-                </View>
-                <Slider
-                  minimumValue={1.6}
-                  maximumValue={2.5}
-                  step={0.1}
-                  value={lineHeightMultiplier}
-                  onValueChange={handleLineHeightSliderChange}
-                  onSlidingComplete={handleLineHeightSlidingComplete}
-                  minimumTrackTintColor={theme.accentTerracotta}
-                  maximumTrackTintColor={theme.borderStrong}
-                  thumbTintColor={theme.accentTerracotta}
-                />
-              </View>
-
-              {/* Paragraph Spacing */}
-              <View style={styles.settingGroup}>
-                <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>
-                  অনুচ্ছেদের ব্যবধান
-                </Text>
-                <View style={styles.optionRow}>
-                  {(
-                    [
-                      ['compact', 'সংক্ষিপ্ত'],
-                      ['normal', 'স্বাভাবিক'],
-                      ['relaxed', 'প্রশস্ত'],
-                    ] as const
-                  ).map(([val, lbl]) => {
-                    const active = paragraphSpacing === val;
-                    return (
-                      <Pressable
-                        key={val}
-                        onPress={() => handleSetParagraphSpacing(val)}
-                        style={[
-                          styles.optionBtn,
-                          active
-                            ? {
-                                backgroundColor: theme.accentTerracotta,
-                                borderColor: theme.accentTerracotta,
-                              }
-                            : { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                        ]}>
-                        <Text
-                          style={[
-                            styles.optionBtnText,
-                            { color: active ? '#FFFFFF' : theme.textPrimary },
-                          ]}>
-                          {lbl}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Margin Size */}
-              <View style={styles.settingGroup}>
-                <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>
-                  পাশের মার্জিন
-                </Text>
-                <View style={styles.optionRow}>
-                  {(
-                    [
-                      ['narrow', 'সংকীর্ণ'],
-                      ['normal', 'স্বাভাবিক'],
-                      ['wide', 'প্রশস্ত'],
-                    ] as const
-                  ).map(([val, lbl]) => {
-                    const active = marginSize === val;
-                    return (
-                      <Pressable
-                        key={val}
-                        onPress={() => handleSetMarginSize(val)}
-                        style={[
-                          styles.optionBtn,
-                          active
-                            ? {
-                                backgroundColor: theme.accentTerracotta,
-                                borderColor: theme.accentTerracotta,
-                              }
-                            : { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                        ]}>
-                        <Text
-                          style={[
-                            styles.optionBtnText,
-                            { color: active ? '#FFFFFF' : theme.textPrimary },
-                          ]}>
-                          {lbl}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Alignment & First-Line Indent */}
-              <View style={styles.settingGroup}>
-                <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>
-                  লেখার বিন্যাস
-                </Text>
-                <View style={styles.optionRow}>
-                  <Pressable
-                    onPress={() => handleSetTextAlign('left')}
-                    style={[
-                      styles.optionBtn,
-                      textAlign === 'left'
-                        ? {
-                            backgroundColor: theme.accentTerracotta,
-                            borderColor: theme.accentTerracotta,
-                          }
-                        : { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                    ]}>
-                    <Text
-                      style={[
-                        styles.optionBtnText,
-                        { color: textAlign === 'left' ? '#FFFFFF' : theme.textPrimary },
-                      ]}>
-                      বাম-বিন্যস্ত
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleSetTextAlign('justify')}
-                    style={[
-                      styles.optionBtn,
-                      textAlign === 'justify'
-                        ? {
-                            backgroundColor: theme.accentTerracotta,
-                            borderColor: theme.accentTerracotta,
-                          }
-                        : { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                    ]}>
-                    <Text
-                      style={[
-                        styles.optionBtnText,
-                        { color: textAlign === 'justify' ? '#FFFFFF' : theme.textPrimary },
-                      ]}>
-                      উভয় প্রান্ত সমান
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <Pressable
-                onPress={handleToggleIndent}
-                style={[
-                  styles.indentToggleRow,
-                  { backgroundColor: theme.surface, borderColor: theme.borderSubtle },
-                ]}>
-                <Text style={[styles.settingLabel, { color: theme.textPrimary }]}>
-                  অনুচ্ছেদ প্রথম লাইন ইন্ডেন্ট
-                </Text>
-                <Ionicons
-                  name={firstLineIndent ? 'checkbox' : 'square-outline'}
-                  size={22}
-                  color={firstLineIndent ? theme.accentTerracotta : theme.textMuted}
-                />
-              </Pressable>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowSettingsModal(false)}
+        theme={theme}
+        themeMode={themeMode}
+        onSelectThemeMode={setThemeMode}
+        fontSize={fontSize}
+        lineHeightMultiplier={lineHeightMultiplier}
+        calculatedLineHeight={calculatedLineHeight}
+        proseFontFamily={proseFontFamily}
+        isSerif={isSerif}
+        textAlign={textAlign}
+        paragraphSpacing={paragraphSpacing}
+        marginSize={marginSize}
+        firstLineIndent={firstLineIndent}
+        onFontSizeChange={handleFontSizeSliderChange}
+        onFontSizeComplete={handleFontSizeSlidingComplete}
+        onLineHeightChange={handleLineHeightSliderChange}
+        onLineHeightComplete={handleLineHeightSlidingComplete}
+        onSetFontFamily={handleSetFontFamily}
+        onSetTextAlign={handleSetTextAlign}
+        onSetParagraphSpacing={handleSetParagraphSpacing}
+        onSetMarginSize={handleSetMarginSize}
+        onToggleIndent={handleToggleIndent}
+        onResetDefaults={handleResetSettings}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  stateCenterWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
+  },
   paperTextureBg: {
     position: 'absolute',
     top: 0,
@@ -1451,41 +1306,54 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
+    alignItems: 'center',
     zIndex: 50,
   },
+  hudMaxWidth: {
+    width: '100%',
+    maxWidth: LAYOUT.maxReaderWidth + 32,
+  },
   glassHeader: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
   },
   headerInnerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
+  },
+  headerActionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
+    width: TOUCH_TARGET.min,
+    height: TOUCH_TARGET.min,
+    borderRadius: TOUCH_TARGET.min / 2,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
   titleCenter: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
   bookHeaderTitle: {
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: FONTS.serifBold,
   },
   chapterHeaderSubtitle: {
-    fontSize: 11,
+    fontSize: 11.5,
+    lineHeight: 16,
     fontFamily: FONTS.sansMedium,
   },
   readingScrollContent: {
     width: '100%',
-    maxWidth: 680,
+    maxWidth: LAYOUT.maxReaderWidth,
     alignSelf: 'center',
   },
   chapterHeader: {
@@ -1500,7 +1368,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   chapterMetaText: {
-    fontSize: 11,
+    fontSize: 11.5,
+    lineHeight: 16,
     fontFamily: FONTS.sansMedium,
   },
   chapterTitleMain: {
@@ -1510,7 +1379,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   chapterAuthorLine: {
-    fontSize: 12,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontFamily: FONTS.sansMedium,
     marginBottom: 12,
   },
@@ -1532,7 +1402,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   bookmarkTipText: {
-    fontSize: 11,
+    fontSize: 11.5,
+    lineHeight: 17,
     fontFamily: FONTS.sansMedium,
     textAlign: 'center',
   },
@@ -1546,15 +1417,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   nextLabel: {
-    fontSize: 11,
+    fontSize: 11.5,
+    lineHeight: 16,
     fontFamily: FONTS.sansBold,
   },
   nextTitle: {
     fontSize: 15,
+    lineHeight: 22,
     fontFamily: FONTS.serifBold,
   },
   nextMeta: {
-    fontSize: 11,
+    fontSize: 11.5,
+    lineHeight: 16,
     fontFamily: FONTS.sansMedium,
   },
   chapterEndNav: {
@@ -1562,7 +1436,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     paddingTop: 16,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   chapterNavBtn: {
     flex: 1,
@@ -1577,6 +1451,7 @@ const styles = StyleSheet.create({
   },
   chapterNavBtnText: {
     fontSize: 13,
+    lineHeight: 18,
     fontFamily: FONTS.sansBold,
   },
   animatedBottomPill: {
@@ -1589,53 +1464,58 @@ const styles = StyleSheet.create({
   floatingControlPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    gap: 6,
   },
   pillChapterBtn: {
-    width: 34,
-    height: 36,
+    width: 38,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   themeDotsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    paddingHorizontal: 2,
   },
   themeCircleDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
   },
   controlDivider: {
-    width: 1,
-    height: 18,
+    width: StyleSheet.hairlineWidth,
+    height: 20,
   },
   fontScalerGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
   },
   scaleBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    minWidth: 32,
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scaleBtnText: {
     fontSize: 13,
+    lineHeight: 18,
     fontFamily: FONTS.sansBold,
   },
   fontSizeLabel: {
-    fontSize: 12,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontFamily: FONTS.serifBold,
     minWidth: 22,
     textAlign: 'center',
   },
   settingsTriggerBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1643,182 +1523,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: RADIUS.pill,
     zIndex: 70,
   },
   toastText: {
-    fontSize: 12,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontFamily: FONTS.sansMedium,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'flex-end',
-  },
-  backdropDismissArea: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  sheetHandleWrap: {
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 2,
-  },
-  sheetHandle: {
-    width: 38,
-    height: 4,
-    borderRadius: 2,
-    opacity: 0.55,
-  },
-  actionSheet: {
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    borderTopWidth: 1,
-    padding: SPACING.lg,
-    gap: 10,
-  },
-  actionSnippet: {
-    fontSize: 13,
-    fontFamily: FONTS.serifRegular,
-    lineHeight: 22,
-    marginBottom: 4,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: TOUCH_TARGET.min,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: RADIUS.md,
-  },
-  actionBtnText: {
-    fontSize: 14,
-    fontFamily: FONTS.sansBold,
-  },
-  modalSheet: {
-    maxHeight: '78%',
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    borderTopWidth: 1,
-    overflow: 'hidden',
-  },
-  settingsSheet: {
-    maxHeight: '84%',
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    borderTopWidth: 1,
-    overflow: 'hidden',
-  },
-  settingsScroll: {
-    flexGrow: 0,
-    flexShrink: 1,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontFamily: FONTS.serifBold,
-  },
-  modalCloseBtn: {
-    padding: 4,
-  },
-  tocModalList: {
-    padding: 16,
-    gap: 8,
-  },
-  tocItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-  },
-  tocNum: {
-    fontSize: 13,
-    fontFamily: FONTS.serifBold,
-    minWidth: 28,
-  },
-  tocItemTitle: {
-    fontSize: 14,
-    fontFamily: FONTS.serifBold,
-  },
-  tocItemSub: {
-    fontSize: 11,
-    fontFamily: FONTS.sansMedium,
-  },
-  settingsBody: {
-    padding: 20,
-    gap: 16,
-  },
-  previewBox: {
-    padding: 14,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-  },
-  settingGroup: {
-    gap: 8,
-  },
-  settingLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  settingLabel: {
-    fontSize: 13,
-    fontFamily: FONTS.sansBold,
-  },
-  settingValText: {
-    fontSize: 13,
-    fontFamily: FONTS.serifBold,
-  },
-  themePillsRow: {
-    gap: 8,
-  },
-  themePillBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  optionBtn: {
-    flex: 1,
-    minHeight: 40,
-    paddingHorizontal: 10,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  optionBtnText: {
-    fontSize: 12,
-    fontFamily: FONTS.sansBold,
-    textAlign: 'center',
-  },
-  indentToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: TOUCH_TARGET.min,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
   },
 });

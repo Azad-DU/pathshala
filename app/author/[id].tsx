@@ -1,56 +1,65 @@
-import React, { useState, useMemo, useCallback, useRef, type ComponentRef } from 'react';
+import React, {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+} from 'react';
 import {
   FlatList,
   Image,
-  Pressable,
-  ScrollView,
+  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ALL_BOOKS_META,
   LITERARY_TYPE_INFO,
-  WRITERS,
   getWriterById,
 } from '@/data/writers';
 import type { BookMeta, LiteraryType, ReadingHistory } from '@/types/library';
 import { getWriterAvatarSource } from '@/constants/covers';
+import { ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
-import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
 import { ClothboundBookCard } from '@/components/ClothboundBookCard';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { GlassHeader } from '@/components/ui/GlassHeader';
+import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { usePathshalaTheme } from '@/context/ThemeContext';
+import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { StorageService } from '@/services/storage';
-import { hapticSelection } from '@/utils/haptics';
+import { CATEGORY_ORDER } from '@/utils/bookHelpers';
 
-const CATEGORY_ORDER: LiteraryType[] = [
-  'uponnash',
-  'golpo',
-  'kobita',
-  'gaan',
-  'natok',
-  'probondho',
-  'kishorepattho',
-  'vromonkahini',
-  'onyanno',
-];
+interface LiteraryGroup {
+  type: LiteraryType;
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  books: BookMeta[];
+}
+
+function GroupSeparator() {
+  return <View style={{ height: SPACING.xl }} />;
+}
 
 export default function AuthorDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = usePathshalaTheme();
+  const layout = useResponsiveLayout();
   const blurTargetRef = useRef<ComponentRef<typeof BlurTargetView>>(null);
 
-  const author = getWriterById(id || '') || WRITERS[0];
+  const author = id ? getWriterById(id) : undefined;
   const [readingHistory, setReadingHistory] = useState<
     Record<string, ReadingHistory>
   >({});
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -64,20 +73,20 @@ export default function AuthorDetailsScreen() {
     [author]
   );
 
-  const literaryGroups = useMemo(() => {
-    const groups: {
-      type: LiteraryType;
-      title: string;
-      icon: string;
-      books: BookMeta[];
-    }[] = [];
+  const totalChaptersCount = useMemo(
+    () => authorBooks.reduce((sum, b) => sum + (b.totalChapters || 0), 0),
+    [authorBooks]
+  );
+
+  const literaryGroups: LiteraryGroup[] = useMemo(() => {
+    const groups: LiteraryGroup[] = [];
     for (const type of CATEGORY_ORDER) {
       const books = authorBooks.filter((b) => b.literaryType === type);
       if (books.length > 0) {
         groups.push({
           type,
           title: LITERARY_TYPE_INFO[type].label,
-          icon: LITERARY_TYPE_INFO[type].icon,
+          icon: LITERARY_TYPE_INFO[type].icon as keyof typeof Ionicons.glyphMap,
           books,
         });
       }
@@ -85,25 +94,26 @@ export default function AuthorDetailsScreen() {
     return groups;
   }, [authorBooks]);
 
-  if (!author) return null;
-  const avatarSource = getWriterAvatarSource(author.id);
+  const renderCardSeparator = useCallback(
+    () => <View style={{ width: layout.shelfGap }} />,
+    [layout.shelfGap]
+  );
 
-  return (
-    <View style={[styles.safeArea, { backgroundColor: theme.canvas }]}>
-      <BlurTargetView ref={blurTargetRef} style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: insets.top + 82,
-            paddingBottom: Math.max(insets.bottom, 16) + 34,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}>
+  const avatarSource = author ? getWriterAvatarSource(author.id) : null;
+
+  const listHeader = useMemo(() => {
+    if (!author) return undefined;
+    return (
+      <View
+        style={[
+          styles.heroWrap,
+          { paddingHorizontal: layout.horizontalPadding },
+        ]}>
         <View
           style={[
             styles.authorHero,
-            { backgroundColor: theme.card, borderColor: theme.borderStrong },
+            ELEVATION.e1,
+            { backgroundColor: theme.card, borderColor: theme.borderSubtle },
           ]}>
           <View
             style={[
@@ -111,8 +121,6 @@ export default function AuthorDetailsScreen() {
               {
                 backgroundColor: author.avatarColor,
                 borderColor: theme.borderStrong,
-                borderWidth: 2,
-                overflow: 'hidden',
               },
             ]}>
             {avatarSource ? (
@@ -126,7 +134,9 @@ export default function AuthorDetailsScreen() {
             )}
           </View>
 
-          <Text style={[styles.authorName, { color: theme.textPrimary }]}>
+          <Text
+            accessibilityRole="header"
+            style={[styles.authorName, { color: theme.textPrimary }]}>
             {author.name}
           </Text>
 
@@ -144,6 +154,50 @@ export default function AuthorDetailsScreen() {
             {author.bio}
           </Text>
 
+          {/* Writer Stats Row */}
+          <View
+            style={[
+              styles.statsRow,
+              { borderTopColor: theme.borderSubtle, borderBottomColor: theme.borderSubtle },
+            ]}>
+            <View style={styles.statCell}>
+              <Text style={[styles.statNumber, { color: theme.textPrimary }]}>
+                {toBanglaNumber(authorBooks.length)}
+              </Text>
+              <Text style={[styles.statCaption, { color: theme.textMuted }]}>
+                গ্রন্থ
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.statDivider,
+                { backgroundColor: theme.borderSubtle },
+              ]}
+            />
+            <View style={styles.statCell}>
+              <Text style={[styles.statNumber, { color: theme.textPrimary }]}>
+                {toBanglaNumber(totalChaptersCount)}
+              </Text>
+              <Text style={[styles.statCaption, { color: theme.textMuted }]}>
+                রচনা / পর্ব
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.statDivider,
+                { backgroundColor: theme.borderSubtle },
+              ]}
+            />
+            <View style={styles.statCell}>
+              <Text style={[styles.statNumber, { color: theme.textPrimary }]}>
+                {toBanglaNumber(literaryGroups.length)}
+              </Text>
+              <Text style={[styles.statCaption, { color: theme.textMuted }]}>
+                শাখা
+              </Text>
+            </View>
+          </View>
+
           {author.quoteSnippet ? (
             <View
               style={[
@@ -151,6 +205,7 @@ export default function AuthorDetailsScreen() {
                 {
                   backgroundColor: theme.surface,
                   borderColor: theme.borderSubtle,
+                  borderLeftColor: theme.accentTerracotta,
                 },
               ]}>
               <Text style={[styles.quoteText, { color: theme.textPrimary }]}>
@@ -159,81 +214,132 @@ export default function AuthorDetailsScreen() {
             </View>
           ) : null}
         </View>
+      </View>
+    );
+  }, [
+    author,
+    layout.horizontalPadding,
+    theme,
+    avatarSource,
+    authorBooks.length,
+    totalChaptersCount,
+    literaryGroups.length,
+  ]);
 
-        <View style={styles.groupsContainer}>
-          {literaryGroups.map((group) => (
-            <View key={group.type} style={styles.groupBlock}>
-              <View style={styles.groupHeader}>
-                <View style={styles.groupTitleRow}>
-                  <Ionicons
-                    name={group.icon as keyof typeof Ionicons.glyphMap}
-                    size={17}
-                    color={theme.accentTerracotta}
-                  />
-                  <Text
-                    style={[styles.groupTitle, { color: theme.textPrimary }]}>
-                    {group.title}
-                  </Text>
-                  <Text style={[styles.groupCount, { color: theme.textMuted }]}>
-                    ({toBanglaNumber(group.books.length)})
-                  </Text>
-                </View>
+  const renderGroup = useCallback(
+    ({ item: group }: { item: LiteraryGroup }) => (
+      <View style={styles.groupBlock}>
+        <SectionHeader
+          icon={group.icon}
+          title={group.title}
+          countText={`(${toBanglaNumber(group.books.length)})`}
+          actionLabel="সব দেখুন"
+          onActionPress={() =>
+            router.push({
+              pathname: '/browse',
+              params: { type: group.type, writer: author?.id },
+            } as any)
+          }
+          style={{ paddingHorizontal: layout.horizontalPadding }}
+        />
 
-                <Pressable
-                  onPress={() => {
-                    hapticSelection();
-                    router.push({
-                      pathname: '/browse',
-                      params: { type: group.type, writer: author.id },
-                    } as any);
-                  }}
-                  hitSlop={8}
-                  style={styles.seeAllBtn}>
-                  <Text
-                    style={[
-                      styles.seeAllText,
-                      { color: theme.accentTerracotta },
-                    ]}>
-                    সব দেখুন
-                  </Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={14}
-                    color={theme.accentTerracotta}
-                  />
-                </Pressable>
-              </View>
+        <FlatList
+          data={group.books}
+          horizontal
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={3}
+          removeClippedSubviews={Platform.OS === 'android'}
+          getItemLayout={(_, index) => ({
+            length: layout.shelfCardStep,
+            offset: layout.shelfCardStep * index,
+            index,
+          })}
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => `${group.type}-${item.id}`}
+          contentContainerStyle={{
+            paddingHorizontal: layout.horizontalPadding,
+          }}
+          ItemSeparatorComponent={renderCardSeparator}
+          renderItem={({ item }) => (
+            <ClothboundBookCard
+              book={item}
+              size="compact"
+              cardWidth={layout.shelfCardWidth}
+              readingChapter={readingHistory[item.id]?.chapterSequence}
+            />
+          )}
+        />
+      </View>
+    ),
+    [
+      router,
+      author?.id,
+      layout.horizontalPadding,
+      layout.shelfCardStep,
+      layout.shelfCardWidth,
+      renderCardSeparator,
+      readingHistory,
+    ]
+  );
 
-              <FlatList
-                data={group.books}
-                horizontal
-                initialNumToRender={5}
-                maxToRenderPerBatch={5}
-                windowSize={5}
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => `${group.type}-${item.id}`}
-                contentContainerStyle={styles.shelfListContent}
-                ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
-                renderItem={({ item }) => (
-                  <ClothboundBookCard
-                    book={item}
-                    size="compact"
-                    readingChapter={readingHistory[item.id]?.chapterSequence}
-                  />
-                )}
-              />
-            </View>
-          ))}
+  if (!author) {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: theme.canvas }]}>
+        <GlassHeader backButton title="লেখক বৃত্তান্ত" />
+        <View
+          style={[
+            styles.notFoundWrap,
+            { paddingTop: insets.top + 96, paddingHorizontal: layout.horizontalPadding },
+          ]}>
+          <EmptyState
+            icon="person-outline"
+            title="লেখকের তথ্য পাওয়া যায়নি"
+            description="অনুরোধকৃত লেখককে পাঠাগারে খুঁজে পাওয়া যায়নি।"
+            actionLabel="পাঠাগারে ফিরুন"
+            onAction={() => router.replace('/')}
+          />
         </View>
-      </ScrollView>
+      </View>
+    );
+  }
+
+  const topPad = headerHeight > 0 ? headerHeight + 16 : insets.top + 78;
+
+  return (
+    <View style={[styles.safeArea, { backgroundColor: theme.canvas }]}>
+      <BlurTargetView ref={blurTargetRef} style={styles.safeArea}>
+        <FlatList
+          data={literaryGroups}
+          keyExtractor={(g) => g.type}
+          ListHeaderComponent={listHeader}
+          renderItem={renderGroup}
+          ItemSeparatorComponent={GroupSeparator}
+          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          windowSize={4}
+          removeClippedSubviews={Platform.OS === 'android'}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              maxWidth: layout.contentMaxWidth,
+              paddingTop: topPad,
+              paddingBottom: Math.max(insets.bottom, 16) + 36,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+        />
       </BlurTargetView>
 
       <GlassHeader
         backButton
         title="লেখক বৃত্তান্ত"
-        floating
-        radius={24}
+        maxWidth={layout.contentMaxWidth}
         blurTarget={blurTargetRef}
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h > 0 && h !== headerHeight) setHeaderHeight(h);
+        }}
       />
     </View>
   );
@@ -241,24 +347,36 @@ export default function AuthorDetailsScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
+  notFoundWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
+  },
   scrollContent: {
-    paddingBottom: 50,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  heroWrap: {
+    marginBottom: SPACING.xl,
   },
   authorHero: {
-    marginHorizontal: 16,
-    borderRadius: 20,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
-    padding: 20,
+    padding: SPACING.lg,
     alignItems: 'center',
-    marginBottom: 22,
+    gap: 10,
   },
   avatarLarge: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 2,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   avatarImage: {
     width: '100%',
@@ -266,80 +384,74 @@ const styles = StyleSheet.create({
   },
   avatarMonogram: {
     color: '#FFFFFF',
-    fontSize: 28,
+    fontSize: 30,
     fontFamily: FONTS.serifBold,
   },
   authorName: {
-    fontSize: 22,
-    fontFamily: FONTS.serifBold,
+    ...TYPOGRAPHY.h1,
     textAlign: 'center',
-    marginBottom: 6,
   },
   eraBadge: {
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 14,
-    marginBottom: 12,
+    paddingVertical: 5,
+    borderRadius: RADIUS.pill,
   },
   eraBadgeText: {
     fontSize: 12,
+    lineHeight: 17,
     fontFamily: FONTS.sansBold,
   },
   bioText: {
+    ...TYPOGRAPHY.bodySerif,
     fontSize: 14,
-    fontFamily: FONTS.serifRegular,
     lineHeight: 24,
     textAlign: 'center',
-    marginBottom: 14,
+    maxWidth: 620,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 440,
+    paddingVertical: 12,
+    marginTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  statCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  statNumber: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontFamily: FONTS.serifBold,
+  },
+  statCaption: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontFamily: FONTS.sansMedium,
+  },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 28,
   },
   quoteCard: {
     width: '100%',
     padding: 14,
-    borderRadius: 14,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
+    borderLeftWidth: 3,
+    marginTop: 4,
   },
   quoteText: {
+    ...TYPOGRAPHY.bodySerif,
     fontSize: 14,
-    fontFamily: FONTS.serifRegular,
     lineHeight: 23,
     textAlign: 'center',
   },
-  groupsContainer: {
-    gap: 24,
-  },
   groupBlock: {
-    gap: 12,
-  },
-  groupHeader: {
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  groupTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  groupTitle: {
-    fontSize: 17,
-    fontFamily: FONTS.serifBold,
-  },
-  groupCount: {
-    fontSize: 12,
-    fontFamily: FONTS.serifBold,
-  },
-  seeAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    minHeight: 32,
-  },
-  seeAllText: {
-    fontSize: 12,
-    fontFamily: FONTS.sansBold,
-  },
-  shelfListContent: {
-    paddingHorizontal: 16,
+    gap: SPACING.md,
   },
 });
