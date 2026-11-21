@@ -40,27 +40,27 @@ export const LAYOUT = {
 export const TYPOGRAPHY = {
   display: {
     fontSize: 26,
-    lineHeight: 36,
+    lineHeight: Platform.select({ android: undefined, default: 36 }),
     fontFamily: FONTS.serifBold,
   },
   h1: {
     fontSize: 22,
-    lineHeight: 31,
+    lineHeight: Platform.select({ android: undefined, default: 31 }),
     fontFamily: FONTS.serifBold,
   },
   h2: {
     fontSize: 18,
-    lineHeight: 26,
+    lineHeight: Platform.select({ android: undefined, default: 26 }),
     fontFamily: FONTS.serifBold,
   },
   h3: {
     fontSize: 15.5,
-    lineHeight: 23,
+    lineHeight: Platform.select({ android: undefined, default: 23 }),
     fontFamily: FONTS.serifBold,
   },
   body: {
     fontSize: 14,
-    lineHeight: 22,
+    lineHeight: 24,
     fontFamily: FONTS.sansRegular,
   },
   bodySerif: {
@@ -70,17 +70,17 @@ export const TYPOGRAPHY = {
   },
   label: {
     fontSize: 13,
-    lineHeight: 19,
+    lineHeight: Platform.select({ android: undefined, default: 22 }),
     fontFamily: FONTS.sansBold,
   },
   caption: {
     fontSize: 12,
-    lineHeight: 18,
+    lineHeight: Platform.select({ android: undefined, default: 20 }),
     fontFamily: FONTS.sansMedium,
   },
   overline: {
     fontSize: 11.5,
-    lineHeight: 17,
+    lineHeight: Platform.select({ android: undefined, default: 19 }),
     fontFamily: FONTS.sansBold,
   },
 } as const;

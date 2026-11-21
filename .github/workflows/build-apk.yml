@@ -58,6 +58,14 @@ jobs:
           EXPO_NO_TELEMETRY: '1'
         run: npx expo prebuild --platform android --no-install
 
+      - name: Enable Android APK shrinking flags
+        run: |
+          cat >> android/gradle.properties <<'EOF'
+          android.enableMinifyInReleaseBuilds=true
+          android.enableShrinkResourcesInReleaseBuilds=true
+          android.enablePngCrunchInReleaseBuilds=true
+          EOF
+
       - name: Build Android Release APK
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
@@ -65,7 +73,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a --no-daemon
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
 
       - name: Rename APK to Pathshala.apk
         run: |

@@ -13,13 +13,12 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   ALL_QUOTES,
   LITERARY_TYPE_INFO,
@@ -44,11 +43,13 @@ import {
 } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
 import { ClothboundBookCard } from '@/components/ClothboundBookCard';
+import { AppText as Text } from '@/components/ui/AppText';
 import { BookCoverArt } from '@/components/ui/BookCoverArt';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { useTabBlurTarget } from '@/context/TabBlurContext';
+import { useSetTabBlurTarget } from '@/context/TabBlurContext';
 import { usePathshalaTheme } from '@/context/ThemeContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { StorageService } from '@/services/storage';
@@ -57,8 +58,6 @@ import {
   computeReadingProgressPct,
 } from '@/utils/bookHelpers';
 import { hapticSelection } from '@/utils/haptics';
-
-const BRAND_LOGO = require('@/assets/images/brand/logo.jpg');
 
 const APPEARANCE_OPTIONS: {
   mode: AppThemeMode;
@@ -78,7 +77,7 @@ function VerticalShelfSeparator() {
 
 export default function HomeScreen() {
   const { theme, isDark, appThemeMode, setAppThemeMode } = usePathshalaTheme();
-  const { setActiveBlurTarget } = useTabBlurTarget();
+  const setActiveBlurTarget = useSetTabBlurTarget();
   const layout = useResponsiveLayout();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -97,9 +96,20 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setActiveBlurTarget(blurTargetRef);
-      StorageService.getAllReadingHistory().then(setReadingHistory);
+      let active = true;
+      const syncTimer = setTimeout(() => {
+        if (!active) return;
+        setActiveBlurTarget(blurTargetRef);
+        StorageService.getAllReadingHistory().then((next) => {
+          if (active) {
+            setReadingHistory((prev) => (prev === next ? prev : next));
+          }
+        });
+      }, 260);
+
       return () => {
+        active = false;
+        clearTimeout(syncTimer);
         setShowAppearancePopover(false);
       };
     }, [setActiveBlurTarget])
@@ -315,9 +325,10 @@ export default function HomeScreen() {
                       styles.continueTag,
                       { color: theme.accentTerracotta },
                     ]}>
-                    পড়া চালিয়ে যান
+                    {'পড়া\u00A0চালিয়ে\u00A0যান'}
                   </Text>
                   <Text
+                    numberOfLines={1}
                     style={[styles.remainingText, { color: theme.textMuted }]}>
                     {renderWithNotoNumbers(
                       `≈ ${toBanglaNumber(continueItem.remainingMinutes)} মিনিট বাকি`
@@ -400,7 +411,7 @@ export default function HomeScreen() {
               <View style={styles.quoteTopRow}>
                 <Text
                   style={[styles.quoteLabel, { color: theme.accentTerracotta }]}>
-                  আজকের পঙ্‌ক্তি
+                  {'আজকের\u00A0পঙ্‌ক্তি'}
                 </Text>
                 <View
                   style={[
@@ -420,7 +431,9 @@ export default function HomeScreen() {
               </Text>
 
               <View style={styles.quoteFooter}>
-                <Text style={[styles.quoteAuthor, { color: theme.textMuted }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.quoteAuthor, { color: theme.textMuted }]}>
                   — {dailyQuote.author}
                 </Text>
                 {dailyQuote.bookId ? (
@@ -430,7 +443,7 @@ export default function HomeScreen() {
                         styles.quoteReadLinkText,
                         { color: theme.accentTerracotta },
                       ]}>
-                      বইটি দেখুন
+                      {'বইটি\u00A0দেখুন'}
                     </Text>
                     <Ionicons
                       name="arrow-forward"
@@ -568,17 +581,7 @@ export default function HomeScreen() {
               },
             ]}>
             <View style={styles.headerLeft}>
-              <View
-                style={[
-                  styles.logoBadge,
-                  { borderColor: theme.borderSubtle },
-                ]}>
-                <Image
-                  source={BRAND_LOGO}
-                  resizeMode="cover"
-                  style={styles.logoImage}
-                />
-              </View>
+              <BrandLogo size={40} borderRadius={12} />
               <View style={styles.brandTextWrap}>
                 <Text
                   accessibilityRole="header"
@@ -760,17 +763,6 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
-  logoBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  logoImage: {
-    width: '100%',
-    height: '100%',
-  },
   brandTextWrap: {
     flex: 1,
     justifyContent: 'center',
@@ -818,7 +810,6 @@ const styles = StyleSheet.create({
   popoverTitle: {
     ...TYPOGRAPHY.label,
     fontSize: 12.5,
-    paddingHorizontal: 2,
   },
   segmentedWrap: {
     flexDirection: 'row',
@@ -884,7 +875,7 @@ const styles = StyleSheet.create({
   },
   writerChipText: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   writerChipCount: {
     fontSize: 10.5,
@@ -915,11 +906,14 @@ const styles = StyleSheet.create({
   },
   continueTag: {
     ...TYPOGRAPHY.overline,
+    flexShrink: 0,
   },
   remainingText: {
     fontSize: 11,
     lineHeight: 16,
     fontFamily: FONTS.sansMedium,
+    flexShrink: 1,
+    minWidth: 0,
   },
   continueTitle: {
     ...TYPOGRAPHY.h3,
@@ -973,12 +967,14 @@ const styles = StyleSheet.create({
   },
   quoteLabel: {
     ...TYPOGRAPHY.overline,
+    flexShrink: 0,
   },
   quoteSourceBadge: {
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: RADIUS.pill,
-    maxWidth: '62%',
+    flexShrink: 1,
+    maxWidth: '58%',
   },
   quoteSource: {
     fontSize: 11,
@@ -994,19 +990,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
     paddingTop: 2,
   },
   quoteAuthor: {
     ...TYPOGRAPHY.caption,
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
   },
   quoteReadLink: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
+    paddingRight: 2,
   },
   quoteReadLinkText: {
-    ...TYPOGRAPHY.label,
-    fontSize: 12,
+    fontFamily: FONTS.serifBold,
+    fontSize: 12.5,
+    lineHeight: 21,
+    flexShrink: 0,
   },
   shelfSection: {
     gap: SPACING.md,

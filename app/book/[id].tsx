@@ -10,14 +10,13 @@ import {
   Image,
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { getBookMetaById, getWriterById } from '@/data/writers';
 import type { ChapterMeta, ReadingHistory } from '@/types/library';
 import { getWriterAvatarSource } from '@/constants/covers';
@@ -29,6 +28,7 @@ import {
   TYPOGRAPHY,
 } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
+import { AppText as Text } from '@/components/ui/AppText';
 import { BookCoverArt } from '@/components/ui/BookCoverArt';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { GlassHeader } from '@/components/ui/GlassHeader';

@@ -16,6 +16,11 @@ const STORAGE_KEYS = {
   READING_HISTORY: '@pathshala_reading_history',
 };
 
+export const READER_FONT_SIZE_MIN = 10;
+export const READER_FONT_SIZE_MAX = 20;
+export const READER_LINE_HEIGHT_MIN = 0.5;
+export const READER_LINE_HEIGHT_MAX = 3;
+
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   themeId: 'paper-beige',
   fontSize: 19,
@@ -28,6 +33,23 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
 };
 
 const DEFAULT_SETTINGS = DEFAULT_READER_SETTINGS;
+
+function clampReaderSettings(settings: ReaderSettings): ReaderSettings {
+  const fontSize = Math.max(
+    READER_FONT_SIZE_MIN,
+    Math.min(READER_FONT_SIZE_MAX, Math.round(settings.fontSize))
+  );
+  const roundedLineHeight = Math.round(settings.lineHeightMultiplier * 10) / 10;
+  const lineHeightMultiplier = Math.max(
+    READER_LINE_HEIGHT_MIN,
+    Math.min(READER_LINE_HEIGHT_MAX, roundedLineHeight)
+  );
+  return {
+    ...settings,
+    fontSize,
+    lineHeightMultiplier,
+  };
+}
 
 let historyCache: Record<string, ReadingHistory> | null = null;
 let bookmarksCache: Bookmark[] | null = null;
@@ -100,7 +122,7 @@ export const StorageService = {
     try {
       const saved = await AsyncStorage.getItem(STORAGE_KEYS.READER_SETTINGS);
       if (saved) {
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+        return clampReaderSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(saved) });
       }
     } catch {
       // fallback
@@ -111,7 +133,7 @@ export const StorageService = {
   async saveReaderSettings(settings: Partial<ReaderSettings>): Promise<ReaderSettings> {
     try {
       const current = await StorageService.getReaderSettings();
-      const updated = { ...current, ...settings };
+      const updated = clampReaderSettings({ ...current, ...settings });
       await AsyncStorage.setItem(STORAGE_KEYS.READER_SETTINGS, JSON.stringify(updated));
       return updated;
     } catch (e) {

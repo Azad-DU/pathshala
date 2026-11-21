@@ -3,21 +3,16 @@ import React, {
   RefObject,
   createContext,
   useContext,
+  useMemo,
   useState,
 } from 'react';
 import type { View } from 'react-native';
 
 export type BlurTargetRef = RefObject<ComponentRef<typeof View> | null>;
+type SetBlurTargetFn = (ref: BlurTargetRef | undefined) => void;
 
-interface TabBlurContextValue {
-  activeBlurTarget: BlurTargetRef | undefined;
-  setActiveBlurTarget: (ref: BlurTargetRef | undefined) => void;
-}
-
-const TabBlurContext = createContext<TabBlurContextValue>({
-  activeBlurTarget: undefined,
-  setActiveBlurTarget: () => {},
-});
+const TabBlurValueContext = createContext<BlurTargetRef | undefined>(undefined);
+const TabBlurSetterContext = createContext<SetBlurTargetFn>(() => {});
 
 export function TabBlurProvider({ children }: { children: React.ReactNode }) {
   const [activeBlurTarget, setActiveBlurTarget] = useState<
@@ -25,13 +20,23 @@ export function TabBlurProvider({ children }: { children: React.ReactNode }) {
   >(undefined);
 
   return (
-    <TabBlurContext.Provider
-      value={{ activeBlurTarget, setActiveBlurTarget }}>
-      {children}
-    </TabBlurContext.Provider>
+    <TabBlurSetterContext.Provider value={setActiveBlurTarget}>
+      <TabBlurValueContext.Provider value={activeBlurTarget}>
+        {children}
+      </TabBlurValueContext.Provider>
+    </TabBlurSetterContext.Provider>
   );
 }
 
+export function useSetTabBlurTarget() {
+  return useContext(TabBlurSetterContext);
+}
+
 export function useTabBlurTarget() {
-  return useContext(TabBlurContext);
+  const activeBlurTarget = useContext(TabBlurValueContext);
+  const setActiveBlurTarget = useContext(TabBlurSetterContext);
+  return useMemo(
+    () => ({ activeBlurTarget, setActiveBlurTarget }),
+    [activeBlurTarget, setActiveBlurTarget]
+  );
 }

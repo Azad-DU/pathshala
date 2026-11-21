@@ -11,13 +11,31 @@ import {
   BIBHUTIBHUSHAN_QUOTES,
   BIBHUTIBHUSHAN_WRITER,
 } from './bibhutibhushan/catalog';
-import { loadBibhutiBookChapters } from './bibhutibhushan/loader';
+import { loadBibhutiBookChaptersAsync } from './bibhutibhushan/loader';
 import {
   RABINDRANATH_BOOKS_META,
   RABINDRANATH_QUOTES,
   RABINDRANATH_WRITER,
 } from './rabindranath/catalog';
 import { loadRabindranathBookChaptersAsync } from './rabindranath/loader';
+import {
+  SARATCHANDRA_BOOKS_META,
+  SARATCHANDRA_QUOTES,
+  SARATCHANDRA_WRITER,
+} from './saratchandra/catalog';
+import { loadSaratchandraBookChaptersAsync } from './saratchandra/loader';
+import {
+  BANKIMCHANDRA_BOOKS_META,
+  BANKIMCHANDRA_QUOTES,
+  BANKIMCHANDRA_WRITER,
+} from './bankimchandra/catalog';
+import { loadBankimchandraBookChaptersAsync } from './bankimchandra/loader';
+import {
+  NAZRUL_BOOKS_META,
+  NAZRUL_QUOTES,
+  NAZRUL_WRITER,
+} from './nazrul/catalog';
+import { loadNazrulBookChaptersAsync } from './nazrul/loader';
 
 export interface WriterModule {
   writer: WriterProfile;
@@ -38,13 +56,31 @@ const WRITER_MODULES: WriterModule[] = [
     writer: BIBHUTIBHUSHAN_WRITER,
     books: BIBHUTIBHUSHAN_BOOKS_META,
     quotes: BIBHUTIBHUSHAN_QUOTES,
-    loadChapters: loadBibhutiBookChapters,
+    loadChaptersAsync: loadBibhutiBookChaptersAsync,
   },
   {
     writer: RABINDRANATH_WRITER,
     books: RABINDRANATH_BOOKS_META,
     quotes: RABINDRANATH_QUOTES,
     loadChaptersAsync: loadRabindranathBookChaptersAsync,
+  },
+  {
+    writer: SARATCHANDRA_WRITER,
+    books: SARATCHANDRA_BOOKS_META,
+    quotes: SARATCHANDRA_QUOTES,
+    loadChaptersAsync: loadSaratchandraBookChaptersAsync,
+  },
+  {
+    writer: BANKIMCHANDRA_WRITER,
+    books: BANKIMCHANDRA_BOOKS_META,
+    quotes: BANKIMCHANDRA_QUOTES,
+    loadChaptersAsync: loadBankimchandraBookChaptersAsync,
+  },
+  {
+    writer: NAZRUL_WRITER,
+    books: NAZRUL_BOOKS_META,
+    quotes: NAZRUL_QUOTES,
+    loadChaptersAsync: loadNazrulBookChaptersAsync,
   },
 ];
 

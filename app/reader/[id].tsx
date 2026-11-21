@@ -8,7 +8,6 @@ import React, {
 } from 'react';
 import {
   View,
-  Text,
   Image,
   StyleSheet,
   FlatList,
@@ -28,7 +27,7 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   getBookMetaById,
   loadBookById,
@@ -42,6 +41,7 @@ import {
 } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
 import { THEMES, ThemeId } from '@/constants/Themes';
+import { AppText as Text } from '@/components/ui/AppText';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { GlassHeader } from '@/components/ui/GlassHeader';
 import { GlassSurface } from '@/components/ui/GlassSurface';
@@ -53,6 +53,10 @@ import { ReaderTocSheet } from '@/components/reader/ReaderTocSheet';
 import { useReaderTheme } from '@/context/ThemeContext';
 import {
   DEFAULT_READER_SETTINGS,
+  READER_FONT_SIZE_MAX,
+  READER_FONT_SIZE_MIN,
+  READER_LINE_HEIGHT_MAX,
+  READER_LINE_HEIGHT_MIN,
   StorageService,
 } from '@/services/storage';
 import { hapticImpact, hapticSelection } from '@/utils/haptics';
@@ -123,6 +127,7 @@ const ParagraphRow = React.memo(function ParagraphRow({
         },
       ]}>
       <Text
+        noBuffer
         style={{
           fontSize,
           lineHeight,
@@ -400,27 +405,39 @@ export default function ReaderScreen() {
     [bookChapters, currentBook, progressShared]
   );
 
+  const clampFontSize = (val: number) =>
+    Math.max(READER_FONT_SIZE_MIN, Math.min(READER_FONT_SIZE_MAX, Math.round(val)));
+
+  const clampLineHeight = (val: number) => {
+    const rounded = Math.round(val * 10) / 10;
+    return Math.max(
+      READER_LINE_HEIGHT_MIN,
+      Math.min(READER_LINE_HEIGHT_MAX, rounded)
+    );
+  };
+
   const handleFontSizeChange = (delta: number) => {
     hapticSelection();
-    const nextSize = Math.max(15, Math.min(30, fontSize + delta));
+    const nextSize = clampFontSize(fontSize + delta);
     setFontSize(nextSize);
     StorageService.saveReaderSettings({ fontSize: nextSize });
     showToast(`হরফের আকার: ${toBanglaNumber(nextSize)}`);
   };
 
-  const handleFontSizeSliderChange = (val: number) => setFontSize(val);
+  const handleFontSizeSliderChange = (val: number) => setFontSize(clampFontSize(val));
   const handleFontSizeSlidingComplete = (val: number) => {
-    setFontSize(val);
-    StorageService.saveReaderSettings({ fontSize: val });
+    const clamped = clampFontSize(val);
+    setFontSize(clamped);
+    StorageService.saveReaderSettings({ fontSize: clamped });
   };
 
   const handleLineHeightSliderChange = (val: number) => {
-    setLineHeightMultiplier(Math.round(val * 10) / 10);
+    setLineHeightMultiplier(clampLineHeight(val));
   };
   const handleLineHeightSlidingComplete = (val: number) => {
-    const rounded = Math.round(val * 10) / 10;
-    setLineHeightMultiplier(rounded);
-    StorageService.saveReaderSettings({ lineHeightMultiplier: rounded });
+    const clamped = clampLineHeight(val);
+    setLineHeightMultiplier(clamped);
+    StorageService.saveReaderSettings({ lineHeightMultiplier: clamped });
   };
 
   const handleSetFontFamily = (serif: boolean) => {
@@ -598,9 +615,12 @@ export default function ReaderScreen() {
     }
   }, []);
 
-  const calculatedLineHeight = Math.round(fontSize * lineHeightMultiplier);
-  const proseFontFamily = isSerif ? FONTS.serifRegular : FONTS.sansRegular;
-  const headingFontFamily = isSerif ? FONTS.serifBold : FONTS.sansBold;
+  const calculatedLineHeight = Math.max(
+    1,
+    Math.round(fontSize * lineHeightMultiplier)
+  );
+  const proseFontFamily = isSerif ? FONTS.serifRegular : FONTS.readerSansRegular;
+  const headingFontFamily = isSerif ? FONTS.serifBold : FONTS.readerSansBold;
   const paragraphGap = PARAGRAPH_GAP_MAP[paragraphSpacing];
   const horizontalPad = MARGIN_MAP[marginSize];
 
@@ -1402,9 +1422,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   bookmarkTipText: {
-    fontSize: 11.5,
-    lineHeight: 17,
-    fontFamily: FONTS.sansMedium,
+    width: '100%',
+    fontSize: 12,
+    lineHeight: 21,
+    fontFamily: FONTS.serifMedium,
     textAlign: 'center',
   },
   nextChapterCard: {
@@ -1522,14 +1543,16 @@ const styles = StyleSheet.create({
   toastPill: {
     position: 'absolute',
     alignSelf: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    maxWidth: '90%',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
     borderRadius: RADIUS.pill,
     zIndex: 70,
   },
   toastText: {
-    fontSize: 12.5,
-    lineHeight: 18,
-    fontFamily: FONTS.sansMedium,
+    fontSize: 13,
+    lineHeight: 22,
+    fontFamily: FONTS.serifMedium,
+    textAlign: 'center',
   },
 });

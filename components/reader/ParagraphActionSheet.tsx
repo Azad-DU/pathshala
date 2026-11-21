@@ -1,10 +1,11 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ThemeColors } from '@/constants/Themes';
 import { RADIUS, SPACING, TOUCH_TARGET } from '@/constants/design';
 import { FONTS } from '@/constants/Typography';
+import { AppText as Text } from '@/components/ui/AppText';
 import { BottomSheetModal } from '@/components/ui/BottomSheetModal';
 
 export interface ParagraphActionSheetProps {

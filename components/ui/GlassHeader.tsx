@@ -4,17 +4,17 @@ import {
   Pressable,
   StyleProp,
   StyleSheet,
-  Text,
   View,
   ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LAYOUT, TOUCH_TARGET, TYPOGRAPHY } from '@/constants/design';
 import { usePathshalaTheme } from '@/context/ThemeContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { hapticSelection } from '@/utils/haptics';
+import { AppText as Text } from './AppText';
 import { renderWithNotoNumbers } from './NotoNumbers';
 import { GlassSurface, type GlassSurfaceProps } from './GlassSurface';
 

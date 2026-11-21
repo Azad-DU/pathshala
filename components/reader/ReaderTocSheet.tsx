@@ -3,16 +3,16 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { Chapter, LiteraryType } from '@/types/library';
 import type { ThemeColors } from '@/constants/Themes';
 import { RADIUS, TOUCH_TARGET, TYPOGRAPHY } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
+import { AppText as Text } from '@/components/ui/AppText';
 import { BottomSheetModal } from '@/components/ui/BottomSheetModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';

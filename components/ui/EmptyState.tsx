@@ -1,10 +1,11 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ThemeColors } from '@/constants/Themes';
 import { RADIUS, SPACING, TOUCH_TARGET, TYPOGRAPHY } from '@/constants/design';
 import { usePathshalaTheme } from '@/context/ThemeContext';
 import { hapticSelection } from '@/utils/haptics';
+import { AppText as Text } from './AppText';
 
 export interface EmptyStateProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -128,12 +129,14 @@ const styles = StyleSheet.create({
   },
   title: {
     ...TYPOGRAPHY.h3,
+    width: '100%',
     textAlign: 'center',
   },
   description: {
     ...TYPOGRAPHY.body,
+    width: '100%',
     fontSize: 13,
-    lineHeight: 21,
+    lineHeight: 22,
     textAlign: 'center',
     maxWidth: 320,
   },
@@ -145,19 +148,22 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   primaryBtn: {
+    flexShrink: 0,
     minHeight: TOUCH_TARGET.min,
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     borderRadius: RADIUS.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryBtnText: {
     ...TYPOGRAPHY.label,
+    lineHeight: 22,
     color: '#FFFFFF',
   },
   secondaryBtn: {
+    flexShrink: 0,
     minHeight: TOUCH_TARGET.min,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
     alignItems: 'center',
@@ -165,5 +171,6 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: {
     ...TYPOGRAPHY.label,
+    lineHeight: 22,
   },
 });

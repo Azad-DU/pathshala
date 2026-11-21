@@ -1,9 +1,10 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { BookMeta } from '@/types/library';
-import { RADIUS, TYPOGRAPHY } from '@/constants/design';
+import { RADIUS } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
+import { AppText as Text } from '@/components/ui/AppText';
 import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
 import { BookCoverArt } from '@/components/ui/BookCoverArt';
 import { usePathshalaTheme } from '@/context/ThemeContext';
@@ -17,7 +18,6 @@ export interface ClothboundBookCardProps {
   cardWidth?: number;
   readingChapter?: number;
   showGenre?: boolean;
-  showAuthor?: boolean;
 }
 
 function ClothboundBookCardBase({
@@ -26,7 +26,6 @@ function ClothboundBookCardBase({
   cardWidth: explicitWidth,
   readingChapter,
   showGenre = false,
-  showAuthor = false,
 }: ClothboundBookCardProps) {
   const router = useRouter();
   const { theme } = usePathshalaTheme();
@@ -79,27 +78,6 @@ function ClothboundBookCardBase({
       />
 
       <View style={styles.metaBlock}>
-        <Text
-          numberOfLines={2}
-          style={[
-            styles.title,
-            {
-              color: theme.textPrimary,
-              fontSize: isCompact ? 13.5 : 14.5,
-              lineHeight: isCompact ? 19.5 : 21,
-            },
-          ]}>
-          {renderWithNotoNumbers(book.title, true)}
-        </Text>
-
-        {showAuthor ? (
-          <Text
-            numberOfLines={1}
-            style={[styles.author, { color: theme.textSecondary }]}>
-            {book.author}
-          </Text>
-        ) : null}
-
         <View style={styles.metaBottomRow}>
           <Text
             numberOfLines={1}
@@ -133,8 +111,7 @@ export const ClothboundBookCard = React.memo(
     prev.size === next.size &&
     prev.cardWidth === next.cardWidth &&
     prev.readingChapter === next.readingChapter &&
-    prev.showGenre === next.showGenre &&
-    prev.showAuthor === next.showAuthor
+    prev.showGenre === next.showGenre
 );
 
 export default ClothboundBookCard;
@@ -150,14 +127,6 @@ const styles = StyleSheet.create({
   metaBlock: {
     gap: 2,
     paddingHorizontal: 2,
-  },
-  title: {
-    fontFamily: FONTS.serifBold,
-  },
-  author: {
-    ...TYPOGRAPHY.caption,
-    fontSize: 11.5,
-    lineHeight: 16,
   },
   metaBottomRow: {
     flexDirection: 'row',

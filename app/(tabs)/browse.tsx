@@ -1,4 +1,48 @@
-import React, {
+import { ClothboundBookCard } from '@/components/ClothboundBookCard';
+import { AppText as Text } from '@/components/ui/AppText';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { GlassSurface } from '@/components/ui/GlassSurface';
+import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { getWriterAvatarSource } from '@/constants/covers';
+import {
+  LAYOUT,
+  RADIUS,
+  SPACING,
+  TOUCH_TARGET,
+  TYPOGRAPHY,
+} from '@/constants/design';
+import { FONTS, toBanglaNumber } from '@/constants/Typography';
+import { useSetTabBlurTarget } from '@/context/TabBlurContext';
+import { usePathshalaTheme } from '@/context/ThemeContext';
+import {
+  ALL_BOOKS_META,
+  LITERARY_TYPE_INFO,
+  WRITERS,
+  getBooksByWriter,
+} from '@/data/writers';
+import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { StorageService } from '@/services/storage';
+import type {
+  BookMeta,
+  LiteraryType,
+  ReadingHistory,
+  WriterProfile,
+} from '@/types/library';
+import {
+  SearchDoc,
+  buildDoc,
+  hasStrongTokenHit,
+  parseQuery,
+  scoreDoc,
+  scoreStrongOnly,
+} from '@/utils/banglaSearch';
+import { CATEGORY_ORDER } from '@/utils/bookHelpers';
+import { hapticSelection } from '@/utils/haptics';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { BlurTargetView } from 'expo-blur';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import {
   ComponentRef,
   useCallback,
   useEffect,
@@ -8,58 +52,49 @@ import React, {
 } from 'react';
 import {
   FlatList,
+  Image,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { BlurTargetView } from 'expo-blur';
-import {
-  ALL_BOOKS_META,
-  LITERARY_TYPE_INFO,
-  WRITERS,
-} from '@/data/writers';
-import type { BookMeta, LiteraryType, ReadingHistory } from '@/types/library';
-import {
-  LAYOUT,
-  RADIUS,
-  SPACING,
-  TOUCH_TARGET,
-  TYPOGRAPHY,
-} from '@/constants/design';
-import { FONTS, toBanglaNumber } from '@/constants/Typography';
-import { ClothboundBookCard } from '@/components/ClothboundBookCard';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { GlassSurface } from '@/components/ui/GlassSurface';
-import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
-import { SectionHeader } from '@/components/ui/SectionHeader';
-import { useTabBlurTarget } from '@/context/TabBlurContext';
-import { usePathshalaTheme } from '@/context/ThemeContext';
-import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
-import { StorageService } from '@/services/storage';
-import {
-  SearchDoc,
-  buildDoc,
-  parseQuery,
-  scoreDoc,
-} from '@/utils/banglaSearch';
-import { CATEGORY_ORDER } from '@/utils/bookHelpers';
-import { hapticSelection } from '@/utils/haptics';
 
 const QUICK_SEARCH_TAGS = [
-  'গীতাঞ্জলি',
-  'শেষের কবিতা',
   'পথের পাঁচালী',
-  'গোরা',
+  'গীতাঞ্জলি',
+  'দেবদাস',
+  'আনন্দমঠ',
+  'বিদ্রোহী',
+  'শ্রীকান্ত',
   'চাঁদের পাহাড়',
-  'গল্পগুচ্ছ',
+  'নজরুলগীতি',
 ];
+
+const WRITER_SEARCH_ALIASES: Record<string, string> = {
+  bibhutibhushan:
+    'bibhutibhushan bandyopadhyay bandopadhyay banerjee bibhuti',
+  rabindranath:
+    'rabindranath robindronath tagore thakur robi rabi gurudev',
+  saratchandra:
+    'saratchandra sharatchandra sarat sharat chattopadhyay chatterjee',
+  bankimchandra:
+    'bankimchandra bonkim bankim bonkim chattopadhyay chatterjee',
+  nazrul:
+    'kazi nazrul nojrul islam nazrulgeeti nazrulgiti bidrohi kaji',
+};
+
+const INITIAL_CHAPTER_CAP = 6;
+const MAX_CHAPTER_CAP = 30;
+
+interface IndexedWriter {
+  writer: WriterProfile;
+  bookCount: number;
+  doc: SearchDoc;
+}
 
 interface IndexedBook {
   book: BookMeta;
@@ -77,19 +112,39 @@ interface IndexedChapter {
   doc: SearchDoc;
 }
 
+const INDEXED_WRITERS: IndexedWriter[] = WRITERS.map((writer) => ({
+  writer,
+  bookCount: getBooksByWriter(writer.id).length,
+  doc: buildDoc(
+    [writer.name, WRITER_SEARCH_ALIASES[writer.id] || writer.id],
+    [writer.era]
+  ),
+}));
+
 const INDEXED_BOOKS: IndexedBook[] = ALL_BOOKS_META.map((book) => ({
   book,
   doc: buildDoc(
-    [book.title],
-    [book.author, book.genre, book.summary || '']
+    [
+      book.title,
+      book.id.replace(/^(rt|sc|bc|kn)-/, '').replace(/-/g, ' '),
+    ],
+    [
+      book.author,
+      book.writerId,
+      WRITER_SEARCH_ALIASES[book.writerId] || '',
+      book.genre,
+      LITERARY_TYPE_INFO[book.literaryType].label,
+      book.summary || '',
+    ]
   ),
 }));
 
 let cachedIndexedChapters: IndexedChapter[] | null = null;
 function getIndexedChapters(): IndexedChapter[] {
   if (cachedIndexedChapters) return cachedIndexedChapters;
-  cachedIndexedChapters = ALL_BOOKS_META.flatMap((book) =>
-    book.chaptersMeta.map((ch) => ({
+  cachedIndexedChapters = ALL_BOOKS_META.flatMap((book) => {
+    const writerAliases = WRITER_SEARCH_ALIASES[book.writerId] || '';
+    return book.chaptersMeta.map((ch) => ({
       bookId: book.id,
       bookTitle: book.title,
       literaryType: book.literaryType,
@@ -99,11 +154,17 @@ function getIndexedChapters(): IndexedChapter[] {
       readMinutes: ch.readMinutes,
       doc: buildDoc(
         [ch.displayTitle, ch.title],
-        [book.title, book.author, toBanglaNumber(ch.number)]
+        [book.title, book.author, writerAliases],
+        false
       ),
-    }))
-  );
+    }));
+  });
   return cachedIndexedChapters;
+}
+
+function getWriterChipLabel(writer: WriterProfile): string {
+  if (writer.id === 'nazrul') return 'নজরুল';
+  return writer.name.split(' ')[0];
 }
 
 function GridRowSeparator() {
@@ -112,11 +173,12 @@ function GridRowSeparator() {
 
 export default function BrowseScreen() {
   const { theme, isDark } = usePathshalaTheme();
-  const { setActiveBlurTarget } = useTabBlurTarget();
+  const setActiveBlurTarget = useSetTabBlurTarget();
   const layout = useResponsiveLayout();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const blurTargetRef = useRef<ComponentRef<typeof BlurTargetView>>(null);
+  const flatListRef = useRef<FlatList<BookMeta>>(null);
   const params = useLocalSearchParams<{ type?: string; writer?: string }>();
 
   const [prevParamKey, setPrevParamKey] = useState(
@@ -145,20 +207,41 @@ export default function BrowseScreen() {
   const [searchInput, setSearchInput] = useState('');
   const [debouncedInput, setDebouncedInput] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [expandedQueryKey, setExpandedQueryKey] = useState<string | null>(null);
   const [readingHistory, setReadingHistory] = useState<
     Record<string, ReadingHistory>
   >({});
   const [headerHeight, setHeaderHeight] = useState(0);
+
+  const activeQueryKey = `${debouncedInput}:${selectedType}:${selectedWriter}`;
+  const showAllChapters = expandedQueryKey === activeQueryKey;
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedInput(searchInput), 140);
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  useEffect(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [debouncedInput, selectedType, selectedWriter]);
+
   useFocusEffect(
     useCallback(() => {
-      setActiveBlurTarget(blurTargetRef);
-      StorageService.getAllReadingHistory().then(setReadingHistory);
+      let active = true;
+      const syncTimer = setTimeout(() => {
+        if (!active) return;
+        setActiveBlurTarget(blurTargetRef);
+        StorageService.getAllReadingHistory().then((next) => {
+          if (active) {
+            setReadingHistory((prev) => (prev === next ? prev : next));
+          }
+        });
+      }, 260);
+
+      return () => {
+        active = false;
+        clearTimeout(syncTimer);
+      };
     }, [setActiveBlurTarget])
   );
 
@@ -170,10 +253,16 @@ export default function BrowseScreen() {
   const hasActiveFilters =
     hasQuery || selectedType !== 'all' || selectedWriter !== 'all';
 
-  const handleResetFilters = useCallback(() => {
+  const handleResetAll = useCallback(() => {
     hapticSelection();
     setSearchInput('');
     setDebouncedInput('');
+    setSelectedType('all');
+    setSelectedWriter('all');
+  }, []);
+
+  const handleClearScopeFiltersOnly = useCallback(() => {
+    hapticSelection();
     setSelectedType('all');
     setSelectedWriter('all');
   }, []);
@@ -188,12 +277,11 @@ export default function BrowseScreen() {
 
     if (WRITERS.length > 1) {
       for (const w of WRITERS) {
-        const shortName = w.name.split(' ')[0];
         chips.push({
           id: `writer:${w.id}`,
           kind: 'writer',
           value: w.id,
-          label: shortName,
+          label: getWriterChipLabel(w),
         });
       }
     }
@@ -216,37 +304,82 @@ export default function BrowseScreen() {
     return chips;
   }, [selectedWriter]);
 
-  const matchingChapters = useMemo(() => {
+  const matchingWriters = useMemo(() => {
     if (!hasQuery) return [];
+    const hits: { item: IndexedWriter; score: number }[] = [];
+    for (const w of INDEXED_WRITERS) {
+      if (selectedWriter !== 'all' && w.writer.id !== selectedWriter) continue;
+      const score = scoreDoc(w.doc, parsedQuery);
+      if (score > 0) hits.push({ item: w, score });
+    }
+    hits.sort((a, b) => b.score - a.score);
+    return hits.map((h) => h.item);
+  }, [hasQuery, parsedQuery, selectedWriter]);
+
+  const chapterSearchResult = useMemo(() => {
+    if (!hasQuery) {
+      return {
+        filtered: [] as IndexedChapter[],
+        bestBookScores: new Map<string, number>(),
+        globalCount: 0,
+      };
+    }
+
     const chapters = getIndexedChapters();
-    const scored: { item: IndexedChapter; score: number }[] = [];
+    const scoredFiltered: { item: IndexedChapter; score: number }[] = [];
+    const bestBookScores = new Map<string, number>();
+    let globalCount = 0;
+
     for (const item of chapters) {
-      if (selectedType !== 'all' && item.literaryType !== selectedType) {
-        continue;
-      }
-      if (selectedWriter !== 'all' && item.writerId !== selectedWriter) {
-        continue;
-      }
+      if (!hasStrongTokenHit(item.doc, parsedQuery)) continue;
       const score = scoreDoc(item.doc, parsedQuery);
-      if (score > 0) {
-        scored.push({ item, score });
+      if (score <= 0) continue;
+
+      globalCount++;
+      const matchesScope =
+        (selectedType === 'all' || item.literaryType === selectedType) &&
+        (selectedWriter === 'all' || item.writerId === selectedWriter);
+
+      if (matchesScope) {
+        scoredFiltered.push({ item, score });
+        const prev = bestBookScores.get(item.bookId) ?? 0;
+        if (score > prev) bestBookScores.set(item.bookId, score);
       }
     }
-    scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, 20).map((s) => s.item);
+
+    scoredFiltered.sort((a, b) => b.score - a.score);
+    return {
+      filtered: scoredFiltered.slice(0, MAX_CHAPTER_CAP).map((s) => s.item),
+      bestBookScores,
+      globalCount,
+    };
   }, [hasQuery, parsedQuery, selectedType, selectedWriter]);
 
-  const filteredBooks = useMemo(() => {
-    const chapterBookHits = new Set<string>();
-    if (hasQuery) {
-      for (const ch of matchingChapters) {
-        chapterBookHits.add(ch.bookId);
-      }
-    }
+  const matchingChapters = chapterSearchResult.filtered;
 
-    const scored: { book: BookMeta; score: number }[] = [];
+  const bookSearchResult = useMemo(() => {
+    const scored: {
+      book: BookMeta;
+      score: number;
+      hasDirectTitleHit: boolean;
+    }[] = [];
+    let anyDirectTitleHit = false;
+    let globalBookCount = 0;
+
     for (const item of INDEXED_BOOKS) {
       const { book, doc } = item;
+      const directScore = hasQuery ? scoreDoc(doc, parsedQuery) : 1;
+      const titleHitScore = hasQuery ? scoreStrongOnly(doc, parsedQuery) : 0;
+      const chapterScore = hasQuery
+        ? (chapterSearchResult.bestBookScores.get(book.id) ?? 0)
+        : 0;
+
+      const anyMatch = directScore > 0 || chapterScore > 0;
+      if (hasQuery && directScore > 0) {
+        globalBookCount++;
+      }
+
+      if (!anyMatch) continue;
       if (selectedType !== 'all' && book.literaryType !== selectedType) {
         continue;
       }
@@ -254,20 +387,58 @@ export default function BrowseScreen() {
         continue;
       }
 
-      let score = hasQuery ? scoreDoc(doc, parsedQuery) : 1;
-      if (hasQuery && score === 0 && chapterBookHits.has(book.id)) {
-        score = 3;
-      }
-      if (score > 0) {
-        scored.push({ book, score });
-      }
+      const finalScore = Math.max(
+        directScore,
+        chapterScore > 0 ? Math.min(10, chapterScore) : 0
+      );
+      if (titleHitScore > 0) anyDirectTitleHit = true;
+
+      scored.push({
+        book,
+        score: finalScore,
+        hasDirectTitleHit: titleHitScore > 0,
+      });
     }
 
     if (hasQuery) {
-      scored.sort((a, b) => b.score - a.score);
+      scored.sort((a, b) => {
+        if (a.hasDirectTitleHit !== b.hasDirectTitleHit) {
+          return a.hasDirectTitleHit ? -1 : 1;
+        }
+        return b.score - a.score;
+      });
     }
-    return scored.map((s) => s.book);
-  }, [hasQuery, parsedQuery, selectedType, selectedWriter, matchingChapters]);
+
+    return {
+      books: scored.map((s) => s.book),
+      anyDirectTitleHit,
+      globalBookCount,
+    };
+  }, [
+    hasQuery,
+    parsedQuery,
+    selectedType,
+    selectedWriter,
+    chapterSearchResult.bestBookScores,
+  ]);
+
+  const filteredBooks = bookSearchResult.books;
+  const visibleChapters = showAllChapters
+    ? matchingChapters
+    : matchingChapters.slice(0, INITIAL_CHAPTER_CAP);
+  const placeChaptersAboveBooks =
+    hasQuery && !bookSearchResult.anyDirectTitleHit && matchingChapters.length > 0;
+
+  const isScopeFiltered = selectedType !== 'all' || selectedWriter !== 'all';
+  const totalResultsCount =
+    filteredBooks.length + matchingChapters.length + matchingWriters.length;
+  const globalMatchEstimate =
+    bookSearchResult.globalBookCount + chapterSearchResult.globalCount;
+  const hiddenResultsExist =
+    hasQuery &&
+    isScopeFiltered &&
+    (filteredBooks.length === 0 ||
+      globalMatchEstimate > filteredBooks.length + matchingChapters.length);
 
   const activeHeading = useMemo(() => {
     if (hasQuery) return `অনুসন্ধান: "${debouncedInput.trim()}"`;
@@ -286,7 +457,117 @@ export default function BrowseScreen() {
   const searchFieldBg = isDark
     ? 'rgba(255, 255, 255, 0.07)'
     : 'rgba(30, 25, 20, 0.045)';
-  const totalResultsCount = filteredBooks.length + matchingChapters.length;
+
+  const renderChapterMatchesSection = useCallback(() => {
+    if (visibleChapters.length === 0) return null;
+    const remainingCount = matchingChapters.length - visibleChapters.length;
+
+    return (
+      <View style={styles.sectionBlock}>
+        <SectionHeader
+          title="গল্প, কবিতা, গান ও অধ্যায়"
+          countText={`${toBanglaNumber(matchingChapters.length)}টি মিল`}
+        />
+        <View style={styles.chapterMatchesList}>
+          {visibleChapters.map((item) => (
+            <Pressable
+              key={`${item.bookId}-${item.chapterNumber}`}
+              onPress={() => {
+                hapticSelection();
+                router.push({
+                  pathname: '/reader/[id]',
+                  params: {
+                    id: item.bookId,
+                    initialChapter: String(item.chapterNumber),
+                  },
+                });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.chapterTitle}, ${item.bookTitle}`}
+              style={({ pressed }) => [
+                styles.chapterMatchRow,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: theme.borderSubtle,
+                  opacity: pressed ? 0.86 : 1,
+                },
+              ]}>
+              <View
+                style={[
+                  styles.chapterBadge,
+                  { backgroundColor: theme.accentSoftSage },
+                ]}>
+                <Text
+                  style={[
+                    styles.chapterBadgeText,
+                    { color: theme.accentSage },
+                  ]}>
+                  {toBanglaNumber(item.chapterNumber)}
+                </Text>
+              </View>
+              <View style={styles.chapterMatchInfo}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.chapterMatchTitle,
+                    { color: theme.textPrimary },
+                  ]}>
+                  {renderWithNotoNumbers(item.chapterTitle, true)}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.chapterMatchSub,
+                    { color: theme.textMuted },
+                  ]}>
+                  {renderWithNotoNumbers(
+                    `${item.bookTitle} • প্রায় ${toBanglaNumber(item.readMinutes)} মিনিট`
+                  )}
+                </Text>
+              </View>
+              <Ionicons
+                name="arrow-forward"
+                size={16}
+                color={theme.accentTerracotta}
+              />
+            </Pressable>
+          ))}
+        </View>
+
+        {remainingCount > 0 ? (
+          <Pressable
+            onPress={() => {
+              hapticSelection();
+              setExpandedQueryKey(activeQueryKey);
+            }}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.expandChaptersBtn,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderSubtle,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}>
+            <Text
+              style={[
+                styles.expandChaptersText,
+                { color: theme.accentTerracotta },
+              ]}>
+              {renderWithNotoNumbers(
+                `আরও ${toBanglaNumber(remainingCount)}টি মিল দেখুন`
+              )}
+            </Text>
+            <Ionicons
+              name="chevron-down"
+              size={15}
+              color={theme.accentTerracotta}
+            />
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }, [visibleChapters, matchingChapters.length, activeQueryKey, theme, router]);
 
   const listHeaderElement = useMemo(
     () => (
@@ -306,6 +587,8 @@ export default function BrowseScreen() {
                   key={tag}
                   onPress={() => {
                     hapticSelection();
+                    setSelectedType('all');
+                    setSelectedWriter('all');
                     setSearchInput(tag);
                     setDebouncedInput(tag);
                   }}
@@ -334,95 +617,131 @@ export default function BrowseScreen() {
           </View>
         ) : null}
 
-        {matchingChapters.length > 0 ? (
+        {hiddenResultsExist ? (
+          <Pressable
+            onPress={handleClearScopeFiltersOnly}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.scopeHintBanner,
+              {
+                backgroundColor: theme.accentSoftSage,
+                borderColor: theme.borderSubtle,
+                opacity: pressed ? 0.84 : 1,
+              },
+            ]}>
+            <Ionicons
+              name="funnel-outline"
+              size={15}
+              color={theme.accentSage}
+            />
+            <Text style={[styles.scopeHintText, { color: theme.textPrimary }]}>
+              সকল লেখক ও বিভাগে আরও ফলাফল রয়েছে — ফিল্টার সরিয়ে সব দেখুন
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {matchingWriters.length > 0 ? (
           <View style={styles.sectionBlock}>
             <SectionHeader
-              title="গল্প, কবিতা ও পরিচ্ছেদ"
-              countText={`${toBanglaNumber(matchingChapters.length)}টি মিল`}
+              title="সাহিত্যিক"
+              countText={`${toBanglaNumber(matchingWriters.length)}জন`}
             />
-            <View style={styles.chapterMatchesList}>
-              {matchingChapters.map((item) => (
-                <Pressable
-                  key={`${item.bookId}-${item.chapterNumber}`}
-                  onPress={() => {
-                    hapticSelection();
-                    router.push({
-                      pathname: '/reader/[id]',
-                      params: {
-                        id: item.bookId,
-                        initialChapter: String(item.chapterNumber),
+            <View style={styles.writersResultList}>
+              {matchingWriters.map(({ writer, bookCount }) => {
+                const avatar = getWriterAvatarSource(writer.id);
+                return (
+                  <Pressable
+                    key={writer.id}
+                    onPress={() => {
+                      hapticSelection();
+                      router.push(`/author/${writer.id}` as any);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={writer.name}
+                    style={({ pressed }) => [
+                      styles.writerResultCard,
+                      {
+                        backgroundColor: theme.card,
+                        borderColor: theme.borderSubtle,
+                        opacity: pressed ? 0.86 : 1,
                       },
-                    });
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${item.chapterTitle}, ${item.bookTitle}`}
-                  style={({ pressed }) => [
-                    styles.chapterMatchRow,
-                    {
-                      backgroundColor: theme.card,
-                      borderColor: theme.borderSubtle,
-                      opacity: pressed ? 0.86 : 1,
-                    },
-                  ]}>
-                  <View
-                    style={[
-                      styles.chapterBadge,
-                      { backgroundColor: theme.accentSoftSage },
                     ]}>
-                    <Text
+                    <View
                       style={[
-                        styles.chapterBadgeText,
-                        { color: theme.accentSage },
+                        styles.writerAvatar,
+                        { backgroundColor: writer.avatarColor },
                       ]}>
-                      {toBanglaNumber(item.chapterNumber)}
-                    </Text>
-                  </View>
-                  <View style={styles.chapterMatchInfo}>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.chapterMatchTitle,
-                        { color: theme.textPrimary },
-                      ]}>
-                      {renderWithNotoNumbers(item.chapterTitle, true)}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.chapterMatchSub,
-                        { color: theme.textMuted },
-                      ]}>
-                      {renderWithNotoNumbers(
-                        `${item.bookTitle} • প্রায় ${toBanglaNumber(item.readMinutes)} মিনিট`
+                      {avatar ? (
+                        <Image
+                          source={avatar}
+                          resizeMode="cover"
+                          style={styles.writerAvatarImg}
+                        />
+                      ) : (
+                        <Text style={styles.writerMonogram}>
+                          {writer.monogram}
+                        </Text>
                       )}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={16}
-                    color={theme.accentTerracotta}
-                  />
-                </Pressable>
-              ))}
+                    </View>
+                    <View style={styles.writerInfo}>
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.writerName,
+                          { color: theme.textPrimary },
+                        ]}>
+                        {writer.name}
+                      </Text>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.writerMeta, { color: theme.textMuted }]}>
+                        {renderWithNotoNumbers(
+                          `${writer.birthDeath} • ${toBanglaNumber(bookCount)}টি গ্রন্থ`
+                        )}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={16}
+                      color={theme.accentTerracotta}
+                    />
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
         ) : null}
 
-        <SectionHeader
-          title={activeHeading}
-          countText={`${toBanglaNumber(filteredBooks.length)}টি বই`}
-        />
+        {placeChaptersAboveBooks ? renderChapterMatchesSection() : null}
+
+        {filteredBooks.length > 0 || (!hasQuery && !placeChaptersAboveBooks) ? (
+          <SectionHeader
+            title={activeHeading}
+            countText={`${toBanglaNumber(filteredBooks.length)}টি বই`}
+          />
+        ) : null}
       </View>
     ),
     [
       hasQuery,
-      matchingChapters,
-      activeHeading,
+      hiddenResultsExist,
+      handleClearScopeFiltersOnly,
+      matchingWriters,
+      placeChaptersAboveBooks,
+      renderChapterMatchesSection,
       filteredBooks.length,
+      activeHeading,
       theme,
       router,
     ]
   );
+
+  const listFooterElement = useMemo(() => {
+    if (placeChaptersAboveBooks || matchingChapters.length === 0) {
+      return undefined;
+    }
+    return <View style={styles.listFooterWrap}>{renderChapterMatchesSection()}</View>;
+  }, [placeChaptersAboveBooks, matchingChapters.length, renderChapterMatchesSection]);
 
   const renderBookItem = useCallback(
     ({ item }: { item: BookMeta }) => (
@@ -430,11 +749,10 @@ export default function BrowseScreen() {
         book={item}
         cardWidth={layout.gridCardWidth}
         readingChapter={readingHistory[item.id]?.chapterSequence}
-        showAuthor={selectedWriter === 'all'}
         showGenre={selectedType === 'all'}
       />
     ),
-    [layout.gridCardWidth, readingHistory, selectedWriter, selectedType]
+    [layout.gridCardWidth, readingHistory, selectedType]
   );
 
   const topPadding =
@@ -444,20 +762,22 @@ export default function BrowseScreen() {
     <View style={[styles.safeArea, { backgroundColor: theme.canvas }]}>
       <BlurTargetView ref={blurTargetRef} style={styles.safeArea}>
         <FlatList
+          ref={flatListRef}
           key={`browse-grid-${layout.gridColumns}`}
           data={filteredBooks}
           keyExtractor={(item) => item.id}
           numColumns={layout.gridColumns}
           renderItem={renderBookItem}
           ListHeaderComponent={listHeaderElement}
+          ListFooterComponent={listFooterElement}
           ListEmptyComponent={
-            matchingChapters.length === 0 ? (
+            matchingChapters.length === 0 && matchingWriters.length === 0 ? (
               <EmptyState
                 icon="search-outline"
                 title="কোনো বই বা গল্প পাওয়া যায়নি"
-                description="অন্য কোনো শব্দ বা সহজ বানানে খুঁজে দেখুন অথবা সব রচনা দেখুন।"
+                description="বাংলা বা ইংরেজি (Banglish) যেকোনো বানানে খুঁজে দেখুন অথবা সব ফিল্টার সরিয়ে নিন।"
                 actionLabel="সব রচনা দেখুন"
-                onAction={handleResetFilters}
+                onAction={handleResetAll}
               />
             ) : undefined
           }
@@ -519,7 +839,7 @@ export default function BrowseScreen() {
               <View style={styles.headerMetaActions}>
                 {hasActiveFilters ? (
                   <Pressable
-                    onPress={handleResetFilters}
+                    onPress={handleResetAll}
                     accessibilityRole="button"
                     accessibilityLabel="ফিল্টার মুছুন"
                     hitSlop={8}
@@ -583,7 +903,13 @@ export default function BrowseScreen() {
                 onChangeText={setSearchInput}
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
-                placeholder="বই, গল্প, কবিতা, গান বা লেখক খুঁজুন..."
+                onSubmitEditing={() => {
+                  setDebouncedInput(searchInput);
+                  Keyboard.dismiss();
+                }}
+                autoCorrect={false}
+                autoCapitalize="none"
+                placeholder="বাংলা বা ইংরেজিতে বই, গল্প, কবিতা, গান বা লেখক খুঁজুন..."
                 placeholderTextColor={theme.textMuted}
                 returnKeyType="search"
                 accessibilityLabel="বই, গল্প, কবিতা, গান বা লেখক অনুসন্ধান"
@@ -645,13 +971,13 @@ export default function BrowseScreen() {
                       styles.chipBtn,
                       isActive
                         ? {
-                            backgroundColor: theme.accentTerracotta,
-                            borderColor: theme.accentTerracotta,
-                          }
+                          backgroundColor: theme.accentTerracotta,
+                          borderColor: theme.accentTerracotta,
+                        }
                         : {
-                            backgroundColor: searchFieldBg,
-                            borderColor: theme.borderSubtle,
-                          },
+                          backgroundColor: searchFieldBg,
+                          borderColor: theme.borderSubtle,
+                        },
                       pressed && { opacity: 0.8 },
                     ]}>
                     <Text
@@ -773,6 +1099,9 @@ const styles = StyleSheet.create({
     gap: SPACING.lg,
     marginBottom: SPACING.md,
   },
+  listFooterWrap: {
+    marginTop: SPACING.xl,
+  },
   quickTagsSection: {
     gap: 8,
   },
@@ -795,6 +1124,64 @@ const styles = StyleSheet.create({
   quickTagText: {
     fontSize: 12.5,
     lineHeight: 18,
+    fontFamily: FONTS.sansMedium,
+  },
+  scopeHintBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 13,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+  },
+  scopeHintText: {
+    flex: 1,
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontFamily: FONTS.sansMedium,
+  },
+  writersResultList: {
+    gap: 8,
+  },
+  writerResultCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 11,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    gap: 12,
+  },
+  writerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  writerAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  writerMonogram: {
+    color: '#FFFFFF',
+    fontFamily: FONTS.serifBold,
+    fontSize: 15,
+  },
+  writerInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  writerName: {
+    ...TYPOGRAPHY.h3,
+    fontSize: 14.5,
+    lineHeight: 20,
+  },
+  writerMeta: {
+    fontSize: 11.5,
+    lineHeight: 16,
     fontFamily: FONTS.sansMedium,
   },
   sectionBlock: {
@@ -837,6 +1224,20 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 17,
     fontFamily: FONTS.sansMedium,
+  },
+  expandChaptersBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+  },
+  expandChaptersText: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontFamily: FONTS.sansBold,
   },
   booksGridRow: {
     justifyContent: 'flex-start',

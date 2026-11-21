@@ -10,13 +10,12 @@ import {
   Pressable,
   Share,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { getBookMetaById } from '@/data/writers';
 import type { BookMeta, Bookmark, ReadingHistory } from '@/types/library';
 import {
@@ -28,11 +27,12 @@ import {
   TYPOGRAPHY,
 } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
+import { AppText as Text } from '@/components/ui/AppText';
 import { BookCoverArt } from '@/components/ui/BookCoverArt';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { GlassHeader } from '@/components/ui/GlassHeader';
 import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
-import { useTabBlurTarget } from '@/context/TabBlurContext';
+import { useSetTabBlurTarget } from '@/context/TabBlurContext';
 import { usePathshalaTheme } from '@/context/ThemeContext';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { StorageService } from '@/services/storage';
@@ -59,7 +59,7 @@ function CardSeparator() {
 
 export default function LibraryScreen() {
   const { theme, isDark } = usePathshalaTheme();
-  const { setActiveBlurTarget } = useTabBlurTarget();
+  const setActiveBlurTarget = useSetTabBlurTarget();
   const layout = useResponsiveLayout();
   const blurTargetRef = useRef<ComponentRef<typeof BlurTargetView>>(null);
   const router = useRouter();
@@ -78,9 +78,26 @@ export default function LibraryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setActiveBlurTarget(blurTargetRef);
-      StorageService.getAllReadingHistory().then(setHistoryMap);
-      StorageService.getBookmarks().then(setBookmarks);
+      let active = true;
+      const syncTimer = setTimeout(() => {
+        if (!active) return;
+        setActiveBlurTarget(blurTargetRef);
+        StorageService.getAllReadingHistory().then((next) => {
+          if (active) {
+            setHistoryMap((prev) => (prev === next ? prev : next));
+          }
+        });
+        StorageService.getBookmarks().then((next) => {
+          if (active) {
+            setBookmarks((prev) => (prev === next ? prev : next));
+          }
+        });
+      }, 260);
+
+      return () => {
+        active = false;
+        clearTimeout(syncTimer);
+      };
     }, [setActiveBlurTarget])
   );
 
@@ -264,13 +281,15 @@ export default function LibraryScreen() {
               </View>
 
               <View style={styles.resumeRow}>
-                <Text style={[styles.timeText, { color: theme.textMuted }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.timeText, { color: theme.textMuted }]}>
                   {renderWithNotoNumbers(
                     formatRelativeTimeBangla(entry.lastReadAt)
                   )}
                 </Text>
                 <Text style={[styles.resumeText, { color: theme.accentSage }]}>
-                  চালিয়ে যান →
+                  {'চালিয়ে\u00A0যান →'}
                 </Text>
               </View>
             </View>
@@ -342,7 +361,7 @@ export default function LibraryScreen() {
 
         <View style={styles.bmFooter}>
           <Text style={[styles.resumeText, { color: theme.accentSage }]}>
-            পাঠ্যে ফিরুন →
+            {'পাঠ্যে\u00A0ফিরুন →'}
           </Text>
           <Pressable
             onPress={() =>
@@ -536,7 +555,7 @@ export default function LibraryScreen() {
             },
           ]}>
           <Text
-            numberOfLines={1}
+            numberOfLines={2}
             style={[styles.undoText, { color: theme.canvas }]}>
             {undoState.kind === 'bookmark'
               ? 'বুকমার্ক মুছে ফেলা হয়েছে'
@@ -549,7 +568,7 @@ export default function LibraryScreen() {
             hitSlop={10}
             style={styles.undoActionBtn}>
             <Text style={[styles.undoAction, { color: theme.accentTerracotta }]}>
-              ফিরিয়ে আনুন
+              {'ফিরিয়ে\u00A0আনুন'}
             </Text>
           </Pressable>
         </View>
@@ -623,8 +642,11 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 11,
-    lineHeight: 16,
+    lineHeight: 17,
     fontFamily: FONTS.sansMedium,
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
   },
   progressBarRow: {
     flexDirection: 'row',
@@ -651,11 +673,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     marginTop: 2,
   },
   resumeText: {
-    ...TYPOGRAPHY.label,
-    fontSize: 12,
+    fontFamily: FONTS.serifBold,
+    fontSize: 12.5,
+    lineHeight: 21,
+    flexShrink: 0,
   },
   bmHeader: {
     flexDirection: 'row',
@@ -708,18 +733,21 @@ const styles = StyleSheet.create({
   },
   undoText: {
     fontSize: 13,
-    lineHeight: 18,
-    fontFamily: FONTS.sansMedium,
+    lineHeight: 22,
+    fontFamily: FONTS.serifMedium,
     flex: 1,
+    minWidth: 0,
   },
   undoActionBtn: {
+    flexShrink: 0,
     minHeight: 36,
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
   undoAction: {
     fontSize: 13,
-    lineHeight: 18,
-    fontFamily: FONTS.sansBold,
+    lineHeight: 22,
+    fontFamily: FONTS.serifBold,
+    flexShrink: 0,
   },
 });

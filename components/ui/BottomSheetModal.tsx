@@ -3,15 +3,15 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Text,
   View,
   type DimensionValue,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ThemeColors } from '@/constants/Themes';
 import { RADIUS, TOUCH_TARGET, TYPOGRAPHY } from '@/constants/design';
 import { usePathshalaTheme } from '@/context/ThemeContext';
 import { hapticSelection } from '@/utils/haptics';
+import { AppText as Text } from './AppText';
 import { renderWithNotoNumbers } from './NotoNumbers';
 
 export interface BottomSheetModalProps {

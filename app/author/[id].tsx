@@ -10,13 +10,12 @@ import {
   Image,
   Platform,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   ALL_BOOKS_META,
   LITERARY_TYPE_INFO,
@@ -27,6 +26,7 @@ import { getWriterAvatarSource } from '@/constants/covers';
 import { ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
 import { ClothboundBookCard } from '@/components/ClothboundBookCard';
+import { AppText as Text } from '@/components/ui/AppText';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { GlassHeader } from '@/components/ui/GlassHeader';
 import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
@@ -389,20 +389,22 @@ const styles = StyleSheet.create({
   },
   authorName: {
     ...TYPOGRAPHY.h1,
+    width: '100%',
     textAlign: 'center',
   },
   eraBadge: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: RADIUS.pill,
   },
   eraBadgeText: {
     fontSize: 12,
-    lineHeight: 17,
-    fontFamily: FONTS.sansBold,
+    lineHeight: 19,
+    fontFamily: FONTS.serifBold,
   },
   bioText: {
     ...TYPOGRAPHY.bodySerif,
+    width: '100%',
     fontSize: 14,
     lineHeight: 24,
     textAlign: 'center',
@@ -424,14 +426,18 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   statNumber: {
+    width: '100%',
+    textAlign: 'center',
     fontSize: 18,
     lineHeight: 24,
     fontFamily: FONTS.serifBold,
   },
   statCaption: {
+    width: '100%',
+    textAlign: 'center',
     fontSize: 11.5,
-    lineHeight: 16,
-    fontFamily: FONTS.sansMedium,
+    lineHeight: 18,
+    fontFamily: FONTS.serifMedium,
   },
   statDivider: {
     width: StyleSheet.hairlineWidth,
@@ -447,6 +453,7 @@ const styles = StyleSheet.create({
   },
   quoteText: {
     ...TYPOGRAPHY.bodySerif,
+    width: '100%',
     fontSize: 14,
     lineHeight: 23,
     textAlign: 'center',

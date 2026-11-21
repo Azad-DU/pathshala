@@ -1,9 +1,11 @@
 import React from 'react';
-import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { FONTS } from '@/constants/Typography';
 import { TOUCH_TARGET, TYPOGRAPHY } from '@/constants/design';
 import { usePathshalaTheme } from '@/context/ThemeContext';
 import { hapticSelection } from '@/utils/haptics';
+import { AppText as Text } from './AppText';
 import { renderWithNotoNumbers } from './NotoNumbers';
 
 export interface SectionHeaderProps {
@@ -57,7 +59,7 @@ export function SectionHeader({
             pressed && { opacity: 0.7 },
           ]}>
           <Text style={[styles.actionText, { color: theme.accentTerracotta }]}>
-            {actionLabel}
+            {actionLabel.replace(/ /g, '\u00A0')}
           </Text>
           <Ionicons
             name="chevron-forward"
@@ -79,6 +81,7 @@ const styles = StyleSheet.create({
   },
   left: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 8,
@@ -89,16 +92,21 @@ const styles = StyleSheet.create({
   },
   count: {
     ...TYPOGRAPHY.caption,
+    flexShrink: 0,
   },
   actionBtn: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
     minHeight: TOUCH_TARGET.min,
-    paddingLeft: 8,
+    paddingLeft: 10,
+    paddingRight: 4,
   },
   actionText: {
-    ...TYPOGRAPHY.label,
-    fontSize: 12.5,
+    fontFamily: FONTS.serifBold,
+    fontSize: 13,
+    lineHeight: 22,
+    flexShrink: 0,
   },
 });

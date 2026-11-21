@@ -1,14 +1,21 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import Slider from '@react-native-community/slider';
 import type { ReaderSettings, ThemeMode } from '@/types/library';
 import { THEMES, type ThemeColors } from '@/constants/Themes';
 import { RADIUS, TOUCH_TARGET } from '@/constants/design';
 import { FONTS, toBanglaNumber } from '@/constants/Typography';
+import { AppText as Text } from '@/components/ui/AppText';
 import { BottomSheetModal } from '@/components/ui/BottomSheetModal';
 import { renderWithNotoNumbers } from '@/components/ui/NotoNumbers';
+import {
+  READER_FONT_SIZE_MAX,
+  READER_FONT_SIZE_MIN,
+  READER_LINE_HEIGHT_MAX,
+  READER_LINE_HEIGHT_MIN,
+} from '@/services/storage';
 import { hapticSelection } from '@/utils/haptics';
 
 export interface ReaderSettingsSheetProps {
@@ -243,7 +250,7 @@ export function ReaderSettingsSheet({
                 style={[
                   styles.optionBtnText,
                   {
-                    fontFamily: FONTS.sansBold,
+                    fontFamily: FONTS.readerSansBold,
                     color: !isSerif ? '#FFFFFF' : theme.textPrimary,
                   },
                 ]}>
@@ -264,8 +271,8 @@ export function ReaderSettingsSheet({
             </Text>
           </View>
           <Slider
-            minimumValue={15}
-            maximumValue={30}
+            minimumValue={READER_FONT_SIZE_MIN}
+            maximumValue={READER_FONT_SIZE_MAX}
             step={1}
             value={fontSize}
             onValueChange={onFontSizeChange}
@@ -283,12 +290,12 @@ export function ReaderSettingsSheet({
               লাইনের দূরত্ব
             </Text>
             <Text style={[styles.settingValText, { color: theme.accentTerracotta }]}>
-              {toBanglaNumber(lineHeightMultiplier)}x
+              {toBanglaNumber(lineHeightMultiplier.toFixed(1))}x
             </Text>
           </View>
           <Slider
-            minimumValue={1.6}
-            maximumValue={2.5}
+            minimumValue={READER_LINE_HEIGHT_MIN}
+            maximumValue={READER_LINE_HEIGHT_MAX}
             step={0.1}
             value={lineHeightMultiplier}
             onValueChange={onLineHeightChange}

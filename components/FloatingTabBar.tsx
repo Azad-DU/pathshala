@@ -1,17 +1,17 @@
+import { AppText as Text } from '@/components/ui/AppText';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { RADIUS, TOUCH_TARGET } from '@/constants/design';
 import { FONTS } from '@/constants/Typography';
 import { useTabBlurTarget } from '@/context/TabBlurContext';
 import { usePathshalaTheme } from '@/context/ThemeContext';
 import { hapticSelection } from '@/utils/haptics';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import {
   AccessibilityInfo,
   LayoutChangeEvent,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import Animated, {
@@ -46,9 +46,9 @@ export interface FloatingTabBarProps {
 }
 
 const SPRING_CONFIG = {
-  damping: 22,
-  stiffness: 280,
-  mass: 0.72,
+  damping: 24,
+  stiffness: 300,
+  mass: 0.7,
 };
 
 function getTabMeta(
@@ -212,14 +212,15 @@ export function FloatingTabBar({
                 />
                 <Text
                   numberOfLines={1}
+                  textBreakStrategy="simple"
                   style={[
                     styles.tabLabel,
                     {
                       color: isFocused ? theme.accentTerracotta : theme.textSecondary,
-                      fontFamily: isFocused ? FONTS.sansBold : FONTS.sansMedium,
+                      fontFamily: isFocused ? FONTS.serifBold : FONTS.serifMedium,
                     },
                   ]}>
-                  {displayLabel}
+                  {displayLabel.replace(/ /g, '\u00A0')}
                 </Text>
               </Pressable>
             );
@@ -239,11 +240,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dockOuter: {
-    width: '100%',
-    maxWidth: 372,
+    width: 276,
+    maxWidth: '100%',
   },
   dockPadding: {
-    paddingVertical: 5,
+    paddingVertical: 4,
     paddingHorizontal: 5,
   },
   tabsRow: {
@@ -261,16 +262,18 @@ const styles = StyleSheet.create({
   },
   tabButton: {
     flex: 1,
-    minHeight: TOUCH_TARGET.min + 4,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
+    minHeight: TOUCH_TARGET.min,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
     zIndex: 1,
   },
   tabLabel: {
-    fontSize: 11,
-    lineHeight: 15,
+    width: '100%',
+    textAlign: 'center',
+    fontSize: 11.5,
+    lineHeight: 19,
   },
 });

@@ -6,10 +6,13 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { BookMeta } from '@/types/library';
 import { getBookCoverVisual } from '@/constants/covers';
 import { ELEVATION } from '@/constants/design';
+import { FONTS } from '@/constants/Typography';
+import { AppText as Text } from './AppText';
+import { renderWithNotoNumbers } from './NotoNumbers';
 
 const COVER_BG: Record<string, string> = {
   terracotta: '#5E2714',
@@ -25,6 +28,7 @@ export interface BookCoverArtProps {
   progressPct?: number;
   showBookmarkDot?: boolean;
   elevation?: 'none' | 'e1' | 'e2' | 'e3';
+  showTitle?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -40,9 +44,14 @@ export const BookCoverArt = React.memo(function BookCoverArt({
   progressPct = 0,
   showBookmarkDot = false,
   elevation = 'e2',
+  showTitle,
   style,
 }: BookCoverArtProps) {
   const computedHeight = height ?? Math.round(width * 1.46);
+  const titleVisible = showTitle ?? width >= 100;
+  const titleSize = Math.min(23, Math.max(12.5, Math.round(width * 0.105)));
+  const authorSize = Math.max(9.5, Math.round(titleSize * 0.62));
+  const showAuthorLine = width >= 120;
   const coverVisual = getBookCoverVisual(book);
   const fallbackBg = COVER_BG[book.coverStyle] ?? COVER_BG.terracotta;
   const shadowStyle = elevation !== 'none' ? ELEVATION[elevation] : undefined;
@@ -86,6 +95,39 @@ export const BookCoverArt = React.memo(function BookCoverArt({
           pointerEvents="none"
           style={[styles.absFill, { backgroundColor: coverVisual.tintColor }]}
         />
+
+        {/* Layered bottom scrim (no gradient dependency) for title legibility */}
+        {titleVisible ? (
+          <View pointerEvents="none" style={styles.scrimStack}>
+            <View style={[styles.scrimBand, { height: '100%' }]} />
+            <View style={[styles.scrimBand, { height: '72%' }]} />
+            <View style={[styles.scrimBand, { height: '46%' }]} />
+          </View>
+        ) : null}
+
+        {titleVisible ? (
+          <View pointerEvents="none" style={styles.titleOverlay}>
+            <View style={[styles.titleRule, { backgroundColor: coverVisual.accentColor }]} />
+            <Text
+              numberOfLines={3}
+              style={[
+                styles.overlayTitle,
+                { fontSize: titleSize, lineHeight: Math.round(titleSize * 1.32) },
+              ]}>
+              {renderWithNotoNumbers(book.title, true)}
+            </Text>
+            {showAuthorLine ? (
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.overlayAuthor,
+                  { fontSize: authorSize, color: coverVisual.accentColor },
+                ]}>
+                {book.author}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Tasteful 4px subtle left spine crease */}
         <View pointerEvents="none" style={styles.spineCrease}>
@@ -148,6 +190,51 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
+  },
+  scrimStack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '78%',
+    justifyContent: 'flex-end',
+  },
+  scrimBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(10, 8, 6, 0.2)',
+  },
+  titleOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingLeft: 14,
+    paddingRight: 10,
+    paddingBottom: 12,
+    gap: 4,
+  },
+  titleRule: {
+    width: 24,
+    height: 2,
+    borderRadius: 1,
+    opacity: 0.9,
+    marginBottom: 2,
+  },
+  overlayTitle: {
+    color: '#FFFDF8',
+    fontFamily: FONTS.serifBold,
+    textShadowColor: 'rgba(0, 0, 0, 0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  overlayAuthor: {
+    fontFamily: FONTS.sansBold,
+    textShadowColor: 'rgba(0, 0, 0, 0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   spineCrease: {
     position: 'absolute',

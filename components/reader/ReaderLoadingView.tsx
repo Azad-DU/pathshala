@@ -1,8 +1,9 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import type { ThemeColors } from '@/constants/Themes';
 import { LAYOUT, RADIUS, SPACING } from '@/constants/design';
 import { FONTS } from '@/constants/Typography';
+import { AppText as Text } from '@/components/ui/AppText';
 
 export interface ReaderLoadingViewProps {
   bookTitle: string;
